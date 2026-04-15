@@ -1,0 +1,5 @@
+{
+  "name": "Stamply | Consola Legal",
+  "description": "Consola legal de alta gama para receptores judiciales, con ingreso inteligente, firma automatizada y optimización de rutas.",
+  "requestFramePermissions": ["geolocation"]
+}

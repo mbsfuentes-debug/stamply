@@ -1,0 +1,82 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-headline: "Inter", sans-serif;
+  --font-body: "Inter", sans-serif;
+
+  --color-primary: #0F172A;
+  --color-primary-container: #1E293B;
+  --color-on-primary: #ffffff;
+  --color-secondary: #3B82F6;
+  --color-secondary-container: #DBEAFE;
+  --color-on-secondary-container: #1E40AF;
+  --color-tertiary: #7C3AED;
+  --color-tertiary-container: #EDE9FE;
+  --color-on-tertiary-container: #5B21B6;
+  --color-error: #EF4444;
+  --color-error-container: #FEE2E2;
+  --color-on-error-container: #991B1B;
+  --color-success: #10B981;
+  --color-success-container: #D1FAE5;
+  --color-on-success-container: #065F46;
+  --color-warning: #F59E0B;
+  --color-warning-container: #FEF3C7;
+  --color-on-warning-container: #92400E;
+  --color-background: #F8FAFC;
+  --color-surface: #ffffff;
+  --color-surface-dim: #F1F5F9;
+  --color-surface-bright: #ffffff;
+  --color-surface-container-lowest: #ffffff;
+  --color-surface-container-low: #F8FAFC;
+  --color-surface-container: #F1F5F9;
+  --color-surface-container-high: #E2E8F0;
+  --color-surface-container-highest: #CBD5E1;
+  --color-on-surface: #0F172A;
+  --color-on-surface-variant: #64748B;
+  --color-outline: #E2E8F0;
+  --color-outline-variant: #F1F5F9;
+}
+
+@layer base {
+  body {
+    @apply bg-background text-on-surface font-body antialiased;
+  }
+}
+
+.bg-glass {
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+.minimal-card {
+  @apply bg-white border border-outline rounded-xl shadow-sm transition-all duration-300;
+}
+
+.minimal-card:hover {
+  @apply border-secondary/30 shadow-md;
+}
+
+.btn-primary {
+  @apply bg-secondary text-white px-6 py-3 rounded-xl font-semibold text-sm transition-all hover:bg-secondary/90 active:scale-[0.98] flex items-center justify-center gap-2;
+}
+
+.btn-secondary {
+  @apply border border-outline text-on-surface px-6 py-3 rounded-xl font-semibold text-sm transition-all hover:bg-surface-container active:scale-[0.98] flex items-center justify-center gap-2;
+}
+
+.badge {
+  @apply px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider;
+}
+
+.badge-success {
+  @apply bg-success/10 text-success border border-success/20;
+}
+
+.badge-warning {
+  @apply bg-warning/10 text-warning border border-warning/20;
+}
+
+.badge-error {
+  @apply bg-error/10 text-error border border-error/20;
+}
