@@ -254,7 +254,7 @@ RESPONDE EXCLUSIVAMENTE con un objeto JSON válido (sin markdown, sin texto adic
 Si no puedes determinar un campo con certeza, déjalo como cadena vacía (""). Incluye TODOS los demandados con domicilio identificable.`;
 
       const result = await ai.models.generateContent({
-        model: "gemini-2.0-flash",
+        model: "gemini-flash-latest",
         config: {
           systemInstruction: securitySystemInstruction,
           responseMimeType: "application/json",
@@ -366,7 +366,7 @@ TIPO_ENTIDAD: ${entityType}
 MONTO_FINAL: ${montoFinal}`;
 
       const response = await ai.models.generateContent({
-        model: "gemini-2.0-flash",
+        model: "gemini-flash-latest",
         config: {
           systemInstruction: securitySystemInstruction,
           temperature: 0.2,
