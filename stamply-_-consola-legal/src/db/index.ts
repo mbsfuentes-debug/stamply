@@ -29,6 +29,11 @@ export function getDb(): Database.Database {
   if (!_db) {
     _db = new Database(DB_PATH);
     _db.exec(SCHEMA_SQL);
+    // ── Migraciones para bases de datos existentes ──
+    const existingCols = (_db.prepare(`PRAGMA table_info(defendants)`).all() as any[]).map(c => c.name);
+    if (!existingCols.includes('gender'))          _db.exec(`ALTER TABLE defendants ADD COLUMN gender TEXT NOT NULL DEFAULT ''`);
+    if (!existingCols.includes('legal_rep_rut'))   _db.exec(`ALTER TABLE defendants ADD COLUMN legal_rep_rut TEXT NOT NULL DEFAULT ''`);
+    if (!existingCols.includes('legal_rep_gender')) _db.exec(`ALTER TABLE defendants ADD COLUMN legal_rep_gender TEXT NOT NULL DEFAULT ''`);
     seedDatabase(_db);
   }
   return _db;
@@ -186,7 +191,9 @@ function expandCase(row: any) {
     numeroInterno: row.numero_interno,
     caratulaConservador: row.caratula_conservador,
     defendants: defendants.map(d => ({
-      name: d.name, rut: d.rut, address: d.address, city: d.city, legalRep: d.legal_rep
+      name: d.name, rut: d.rut, address: d.address, city: d.city,
+      legalRep: d.legal_rep, gender: d.gender || '',
+      legalRepRut: d.legal_rep_rut || '', legalRepGender: d.legal_rep_gender || '',
     })),
   };
 }
@@ -196,10 +203,11 @@ function expandCase(row: any) {
 export function dbAddDefendant(caseId: string, data: any) {
   const id = crypto.randomUUID();
   getDb().prepare(`
-    INSERT INTO defendants (id,case_id,name,rut,address,city,legal_rep,is_primary)
-    VALUES (?,?,?,?,?,?,?,?)
+    INSERT INTO defendants (id,case_id,name,rut,address,city,legal_rep,gender,legal_rep_rut,legal_rep_gender,is_primary)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?)
   `).run(id, caseId, data.name || '', data.rut || '', data.address || '',
-    data.city || '', data.legalRep || '', data.isPrimary ? 1 : 0);
+    data.city || '', data.legalRep || '', data.gender || '',
+    data.legalRepRut || '', data.legalRepGender || '', data.isPrimary ? 1 : 0);
 }
 
 // ─── TRÁMITES ─────────────────────────────────────────────────────────────────

@@ -24,7 +24,11 @@ interface Defendant {
   rut: string;
   address: string;
   city: string;
+  gender: string;        // 'Masculino' | 'Femenino' | ''
   legalRep: string;
+  legalRepRut: string;
+  legalRepGender: string;
+  hasLegalRep: boolean;  // toggle UI
 }
 
 interface CaseData {
@@ -93,7 +97,7 @@ export default function SmartIntake({ clients = [], setClients, onSuccess, cases
       numeroInterno: '',
       caratulaConservador: '',
       isUrgent: false,
-      defendants: [{ name: '', rut: '', address: '', city: '', legalRep: '' }]
+      defendants: [{ name: '', rut: '', address: '', city: '', gender: '', legalRep: '', legalRepRut: '', legalRepGender: '', hasLegalRep: false }]
     });
     setStep('upload');
   };
@@ -192,7 +196,7 @@ export default function SmartIntake({ clients = [], setClients, onSuccess, cases
             rolNumber: rolInput.trim(),
             plaintiffName: '', defendantName: '', court: '', competencia: 'Civil',
             cliente: '', cartera: '', numeroInterno: '', caratulaConservador: '',
-            defendants: [{ name: '', rut: '', address: '', city: '', legalRep: '' }]
+            defendants: [{ name: '', rut: '', address: '', city: '', gender: '', legalRep: '', legalRepRut: '', legalRepGender: '', hasLegalRep: false }]
           });
           setError(`⚠️ ${errorMsg} Se abrió el formulario manual.`);
           setStep('edit');
@@ -215,7 +219,7 @@ export default function SmartIntake({ clients = [], setClients, onSuccess, cases
         caratulaConservador: prev?.caratulaConservador || '',
         defendants: data.defendants && data.defendants.length > 0
           ? data.defendants
-          : [{ name: data.defendantName || '', rut: '', address: '', city: '', legalRep: '' }]
+          : [{ name: data.defendantName || '', rut: '', address: '', city: '', gender: '', legalRep: '', legalRepRut: '', legalRepGender: '', hasLegalRep: false }]
       }));
 
       setStep('edit');
@@ -231,7 +235,7 @@ export default function SmartIntake({ clients = [], setClients, onSuccess, cases
     if (!formData) return;
     setFormData({
       ...formData,
-      defendants: [...formData.defendants, { name: '', rut: '', address: '', city: '', legalRep: '' }]
+      defendants: [...formData.defendants, { name: '', rut: '', address: '', city: '', gender: '', legalRep: '', legalRepRut: '', legalRepGender: '', hasLegalRep: false }]
     });
   };
 
@@ -242,14 +246,21 @@ export default function SmartIntake({ clients = [], setClients, onSuccess, cases
     setFormData({ ...formData, defendants: newDefendants });
   };
 
-  const handleDefendantChange = (index: number, field: keyof Defendant, value: string) => {
+  const handleDefendantChange = (index: number, field: keyof Defendant | 'hasLegalRep', value: string | boolean) => {
     if (!formData) return;
     const newDefendants = [...formData.defendants];
 
-    if (field === 'rut') {
-      newDefendants[index][field] = formatRut(value);
+    if (field === 'rut' || field === 'legalRepRut') {
+      (newDefendants[index] as any)[field] = formatRut(value as string);
     } else {
-      newDefendants[index][field] = value;
+      (newDefendants[index] as any)[field] = value;
+    }
+
+    // Si se desactiva el toggle, limpiar los campos del rep. legal
+    if (field === 'hasLegalRep' && !value) {
+      newDefendants[index].legalRep = '';
+      newDefendants[index].legalRepRut = '';
+      newDefendants[index].legalRepGender = '';
     }
 
     setFormData({ ...formData, defendants: newDefendants });
@@ -267,7 +278,7 @@ export default function SmartIntake({ clients = [], setClients, onSuccess, cases
       numeroInterno: prev?.numeroInterno || '',
       caratulaConservador: prev?.caratulaConservador || '',
       isUrgent: false,
-      defendants: prev?.defendants || [{ name: '', rut: '', address: '', city: '', legalRep: '' }]
+      defendants: prev?.defendants || [{ name: '', rut: '', address: '', city: '', gender: '', legalRep: '', legalRepRut: '', legalRepGender: '', hasLegalRep: false }]
     }));
     setStep('edit');
   };
@@ -447,9 +458,9 @@ export default function SmartIntake({ clients = [], setClients, onSuccess, cases
               Procesamiento de datos por IA
             </p>
             <p className="text-xs text-amber-700 leading-relaxed">
-              Al subir un PDF, el documento será enviado a <strong>Google Gemini AI</strong> para
+              Al subir un PDF, el documento será enviado a <strong>Groq AI (Llama 4)</strong> para
               extraer automáticamente los datos de la causa (partes, tribunal, domicilios).
-              Los datos se procesan según la política de privacidad de Google.
+              Los datos se procesan según la política de privacidad de Groq.
             </p>
             <label className="flex items-start gap-3 cursor-pointer">
               <input
@@ -463,7 +474,7 @@ export default function SmartIntake({ clients = [], setClients, onSuccess, cases
                 }}
               />
               <span className="text-xs text-amber-800 font-medium">
-                Entiendo que el documento será procesado por Google Gemini AI para extraer datos.
+                Entiendo que el documento será procesado por Groq AI para extraer datos.
               </span>
             </label>
           </div>
@@ -656,10 +667,13 @@ export default function SmartIntake({ clients = [], setClients, onSuccess, cases
                   )}
                   <h5 className="text-xs font-bold text-on-surface-variant uppercase tracking-widest mb-4">Notificado {idx + 1}</h5>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {/* Nombre */}
                     <div>
                       <label className="text-xs font-bold text-on-surface-variant uppercase tracking-widest mb-2 block">Nombre / Razón Social</label>
                       <input type="text" value={def.name} onChange={e => handleDefendantChange(idx, 'name', e.target.value)} className="w-full border border-outline bg-white p-3 text-sm focus:border-primary outline-none transition-all rounded-xl" />
                     </div>
+
+                    {/* RUT */}
                     <div>
                       <label className="text-xs font-bold text-on-surface-variant uppercase tracking-widest mb-2 block">RUT</label>
                       <input
@@ -683,18 +697,128 @@ export default function SmartIntake({ clients = [], setClients, onSuccess, cases
                         </p>
                       )}
                     </div>
+
+                    {/* Género del Notificado */}
                     <div>
-                      <label className="text-xs font-bold text-on-surface-variant uppercase tracking-widest mb-2 block">Representante Legal</label>
-                      <input type="text" value={def.legalRep} onChange={e => handleDefendantChange(idx, 'legalRep', e.target.value)} className="w-full border border-outline bg-white p-3 text-sm focus:border-primary outline-none transition-all rounded-xl" placeholder="Solo si es empresa" />
+                      <label className="text-xs font-bold text-on-surface-variant uppercase tracking-widest mb-2 block">Género del Notificado</label>
+                      <div className="flex gap-2">
+                        {(['Masculino', 'Femenino'] as const).map(g => (
+                          <button
+                            key={g}
+                            type="button"
+                            onClick={() => handleDefendantChange(idx, 'gender', def.gender === g ? '' : g)}
+                            className={cn(
+                              "flex-1 py-2.5 px-3 rounded-xl border-2 text-xs font-bold transition-all duration-200",
+                              def.gender === g
+                                ? g === 'Masculino'
+                                  ? "border-primary bg-primary/10 text-primary"
+                                  : "border-secondary bg-secondary/10 text-secondary"
+                                : "border-outline text-on-surface-variant hover:border-primary/50"
+                            )}
+                          >
+                            {g === 'Masculino' ? '♂ Masculino' : '♀ Femenino'}
+                          </button>
+                        ))}
+                      </div>
                     </div>
+
+                    {/* Domicilio */}
                     <div className="md:col-span-2">
                       <label className="text-xs font-bold text-on-surface-variant uppercase tracking-widest mb-2 block">Domicilio</label>
                       <input type="text" value={def.address} onChange={e => handleDefendantChange(idx, 'address', e.target.value)} className="w-full border border-outline bg-white p-3 text-sm focus:border-primary outline-none transition-all rounded-xl" />
                     </div>
+
+                    {/* Comuna */}
                     <div className="md:col-span-2">
                       <label className="text-xs font-bold text-on-surface-variant uppercase tracking-widest mb-2 block">Comuna</label>
                       <input type="text" value={def.city} onChange={e => handleDefendantChange(idx, 'city', e.target.value)} className="w-full border border-outline bg-white p-3 text-sm focus:border-primary outline-none transition-all rounded-xl" />
                     </div>
+
+                    {/* Toggle Representante Legal */}
+                    <div className="md:col-span-2">
+                      <button
+                        type="button"
+                        onClick={() => handleDefendantChange(idx, 'hasLegalRep', !def.hasLegalRep)}
+                        className={cn(
+                          "flex items-center justify-between w-full px-4 py-3 rounded-xl border-2 transition-all duration-200",
+                          def.hasLegalRep
+                            ? "border-tertiary bg-tertiary/5 text-tertiary"
+                            : "border-outline text-on-surface-variant hover:border-tertiary/50"
+                        )}
+                      >
+                        <div className="flex items-center gap-2">
+                          <div className={cn(
+                            "w-5 h-5 rounded-md border-2 flex items-center justify-center transition-all",
+                            def.hasLegalRep ? "border-tertiary bg-tertiary" : "border-on-surface-variant/40"
+                          )}>
+                            {def.hasLegalRep && (
+                              <svg className="w-3 h-3 text-white" viewBox="0 0 12 12" fill="none">
+                                <path d="M2 6l3 3 5-5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                              </svg>
+                            )}
+                          </div>
+                          <span className="text-xs font-bold uppercase tracking-widest">¿Tiene Representante Legal?</span>
+                        </div>
+                        <span className={cn(
+                          "text-[10px] font-bold px-2 py-0.5 rounded-lg transition-colors",
+                          def.hasLegalRep ? "bg-tertiary/10 text-tertiary" : "bg-surface-container text-on-surface-variant"
+                        )}>
+                          {def.hasLegalRep ? 'Sí' : 'No'}
+                        </span>
+                      </button>
+                    </div>
+
+                    {/* Campos de Representante Legal — solo visibles si toggle activo */}
+                    {def.hasLegalRep && (
+                      <>
+                        <div>
+                          <label className="text-xs font-bold text-on-surface-variant uppercase tracking-widest mb-2 block">Representante Legal</label>
+                          <input type="text" value={def.legalRep} onChange={e => handleDefendantChange(idx, 'legalRep', e.target.value)} className="w-full border border-outline bg-white p-3 text-sm focus:border-primary outline-none transition-all rounded-xl" placeholder="Nombre completo" />
+                        </div>
+                        <div>
+                          <label className="text-xs font-bold text-on-surface-variant uppercase tracking-widest mb-2 block">RUT Representante Legal</label>
+                          <input
+                            type="text"
+                            value={def.legalRepRut}
+                            onChange={e => handleDefendantChange(idx, 'legalRepRut', e.target.value)}
+                            className={cn(
+                              "w-full border bg-white p-3 text-sm outline-none transition-all rounded-xl",
+                              def.legalRepRut && validateRut(def.legalRepRut).isComplete
+                                ? (validateRut(def.legalRepRut).isValid ? "border-success text-success focus:border-success" : "border-error text-error focus:border-error")
+                                : "border-outline focus:border-primary"
+                            )}
+                            placeholder="Ej. 12.345.678-9"
+                          />
+                          {def.legalRepRut && validateRut(def.legalRepRut).isComplete && (
+                            <p className={cn("text-xs mt-1 font-medium", validateRut(def.legalRepRut).isValid ? "text-success" : "text-error")}>
+                              {validateRut(def.legalRepRut).message}
+                            </p>
+                          )}
+                        </div>
+                        <div>
+                          <label className="text-xs font-bold text-on-surface-variant uppercase tracking-widest mb-2 block">Género Rep. Legal</label>
+                          <div className="flex gap-2">
+                            {(['Masculino', 'Femenino'] as const).map(g => (
+                              <button
+                                key={g}
+                                type="button"
+                                onClick={() => handleDefendantChange(idx, 'legalRepGender', def.legalRepGender === g ? '' : g)}
+                                className={cn(
+                                  "flex-1 py-2.5 px-3 rounded-xl border-2 text-xs font-bold transition-all duration-200",
+                                  def.legalRepGender === g
+                                    ? g === 'Masculino'
+                                      ? "border-primary bg-primary/10 text-primary"
+                                      : "border-secondary bg-secondary/10 text-secondary"
+                                    : "border-outline text-on-surface-variant hover:border-primary/50"
+                                )}
+                              >
+                                {g === 'Masculino' ? '♂ Masculino' : '♀ Femenino'}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      </>
+                    )}
                   </div>
                 </div>
               ))}

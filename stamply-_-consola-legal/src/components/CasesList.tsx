@@ -1012,10 +1012,31 @@ export default function CasesList({ cases, setCases, setActiveTab, clients = [],
                           </p>
                         )}
                       </div>
+
+                      {/* Género del Notificado */}
                       <div>
-                        <label className="text-xs font-bold text-on-surface-variant uppercase tracking-widest mb-2 block">Representante Legal</label>
-                        <input type="text" value={def.legalRep || ''} onChange={e => handleEditDefendantChange(idx, 'legalRep', e.target.value)} className="w-full border border-outline bg-white p-3 text-sm focus:border-primary outline-none transition-all rounded-xl" />
+                        <label className="text-xs font-bold text-on-surface-variant uppercase tracking-widest mb-2 block">Género del Notificado</label>
+                        <div className="flex gap-2">
+                          {(['Masculino', 'Femenino'] as const).map(g => (
+                            <button
+                              key={g}
+                              type="button"
+                              onClick={() => handleEditDefendantChange(idx, 'gender', (def.gender || '') === g ? '' : g)}
+                              className={cn(
+                                "flex-1 py-2.5 px-3 rounded-xl border-2 text-xs font-bold transition-all duration-200",
+                                (def.gender || '') === g
+                                  ? g === 'Masculino'
+                                    ? "border-primary bg-primary/10 text-primary"
+                                    : "border-secondary bg-secondary/10 text-secondary"
+                                  : "border-outline text-on-surface-variant hover:border-primary/50"
+                              )}
+                            >
+                              {g === 'Masculino' ? '♂ Masculino' : '♀ Femenino'}
+                            </button>
+                          ))}
+                        </div>
                       </div>
+
                       <div className="md:col-span-2">
                         <label className="text-xs font-bold text-on-surface-variant uppercase tracking-widest mb-2 block">Domicilio</label>
                         <input type="text" value={def.address} onChange={e => handleEditDefendantChange(idx, 'address', e.target.value)} className="w-full border border-outline bg-white p-3 text-sm focus:border-primary outline-none transition-all rounded-xl" />
@@ -1024,6 +1045,92 @@ export default function CasesList({ cases, setCases, setActiveTab, clients = [],
                         <label className="text-xs font-bold text-on-surface-variant uppercase tracking-widest mb-2 block">Comuna</label>
                         <input type="text" value={def.city} onChange={e => handleEditDefendantChange(idx, 'city', e.target.value)} className="w-full border border-outline bg-white p-3 text-sm focus:border-primary outline-none transition-all rounded-xl" />
                       </div>
+
+                      {/* Toggle Representante Legal */}
+                      <div className="md:col-span-2">
+                        <button
+                          type="button"
+                          onClick={() => handleEditDefendantChange(idx, 'hasLegalRep', !(def.hasLegalRep || false))}
+                          className={cn(
+                            "flex items-center justify-between w-full px-4 py-3 rounded-xl border-2 transition-all duration-200",
+                            def.hasLegalRep
+                              ? "border-tertiary bg-tertiary/5 text-tertiary"
+                              : "border-outline text-on-surface-variant hover:border-tertiary/50"
+                          )}
+                        >
+                          <div className="flex items-center gap-2">
+                            <div className={cn(
+                              "w-5 h-5 rounded-md border-2 flex items-center justify-center transition-all",
+                              def.hasLegalRep ? "border-tertiary bg-tertiary" : "border-on-surface-variant/40"
+                            )}>
+                              {def.hasLegalRep && (
+                                <svg className="w-3 h-3 text-white" viewBox="0 0 12 12" fill="none">
+                                  <path d="M2 6l3 3 5-5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                                </svg>
+                              )}
+                            </div>
+                            <span className="text-xs font-bold uppercase tracking-widest">¿Tiene Representante Legal?</span>
+                          </div>
+                          <span className={cn(
+                            "text-[10px] font-bold px-2 py-0.5 rounded-lg transition-colors",
+                            def.hasLegalRep ? "bg-tertiary/10 text-tertiary" : "bg-surface-container text-on-surface-variant"
+                          )}>
+                            {def.hasLegalRep ? 'Sí' : 'No'}
+                          </span>
+                        </button>
+                      </div>
+
+                      {/* Campos de Representante Legal */}
+                      {def.hasLegalRep && (
+                        <>
+                          <div>
+                            <label className="text-xs font-bold text-on-surface-variant uppercase tracking-widest mb-2 block">Representante Legal</label>
+                            <input type="text" value={def.legalRep || ''} onChange={e => handleEditDefendantChange(idx, 'legalRep', e.target.value)} className="w-full border border-outline bg-white p-3 text-sm focus:border-primary outline-none transition-all rounded-xl" placeholder="Nombre completo" />
+                          </div>
+                          <div>
+                            <label className="text-xs font-bold text-on-surface-variant uppercase tracking-widest mb-2 block">RUT Representante Legal</label>
+                            <input
+                              type="text"
+                              value={def.legalRepRut || ''}
+                              onChange={e => handleEditDefendantChange(idx, 'legalRepRut', e.target.value)}
+                              className={cn(
+                                "w-full border bg-white p-3 text-sm outline-none transition-all rounded-xl",
+                                def.legalRepRut && validateRut(def.legalRepRut).isComplete
+                                  ? (validateRut(def.legalRepRut).isValid ? "border-success text-success focus:border-success" : "border-error text-error focus:border-error")
+                                  : "border-outline focus:border-primary"
+                              )}
+                              placeholder="Ej. 12.345.678-9"
+                            />
+                            {def.legalRepRut && validateRut(def.legalRepRut).isComplete && (
+                              <p className={cn("text-xs mt-1 font-medium", validateRut(def.legalRepRut).isValid ? "text-success" : "text-error")}>
+                                {validateRut(def.legalRepRut).message}
+                              </p>
+                            )}
+                          </div>
+                          <div>
+                            <label className="text-xs font-bold text-on-surface-variant uppercase tracking-widest mb-2 block">Género Rep. Legal</label>
+                            <div className="flex gap-2">
+                              {(['Masculino', 'Femenino'] as const).map(g => (
+                                <button
+                                  key={g}
+                                  type="button"
+                                  onClick={() => handleEditDefendantChange(idx, 'legalRepGender', (def.legalRepGender || '') === g ? '' : g)}
+                                  className={cn(
+                                    "flex-1 py-2.5 px-3 rounded-xl border-2 text-xs font-bold transition-all duration-200",
+                                    (def.legalRepGender || '') === g
+                                      ? g === 'Masculino'
+                                        ? "border-primary bg-primary/10 text-primary"
+                                        : "border-secondary bg-secondary/10 text-secondary"
+                                      : "border-outline text-on-surface-variant hover:border-primary/50"
+                                  )}
+                                >
+                                  {g === 'Masculino' ? '♂ Masculino' : '♀ Femenino'}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        </>
+                      )}
                     </div>
                   </div>
                 ))}
@@ -1155,7 +1262,7 @@ export default function CasesList({ cases, setCases, setActiveTab, clients = [],
                 <thead>
                   <tr className="bg-surface-container/30 border-b border-outline">
                     {/* Checkbox column */}
-                    <th className="sticky left-0 z-10 bg-surface-container/30 p-4 shadow-[1px_0_0_0_#e5e7eb] w-10">
+                    <th className="sticky left-0 z-20 bg-white p-4 shadow-[1px_0_0_0_#e5e7eb] w-10">
                       <button
                         onClick={toggleSelectAll}
                         className="w-5 h-5 rounded-md border-2 flex items-center justify-center transition-all"
@@ -1173,7 +1280,7 @@ export default function CasesList({ cases, setCases, setActiveTab, clients = [],
                         )}
                       </button>
                     </th>
-                    <th className="p-4 text-xs font-bold text-primary uppercase tracking-wider cursor-pointer hover:bg-surface-container/50 transition-colors" onClick={() => handleSort('rol')}>
+                    <th className="sticky left-10 z-20 bg-white p-4 text-xs font-bold text-primary uppercase tracking-wider cursor-pointer hover:bg-surface-container/50 transition-colors shadow-[1px_0_0_0_#e5e7eb]" onClick={() => handleSort('rol')}>
                       <div className="flex items-center gap-1">
                         Rol
                         {sortConfig.key === 'rol' ? (sortConfig.direction === 'asc' ? <ArrowUp className="w-3 h-3" /> : <ArrowDown className="w-3 h-3" />) : <ArrowUpDown className="w-3 h-3 text-on-surface-variant/50" />}
@@ -1240,7 +1347,7 @@ export default function CasesList({ cases, setCases, setActiveTab, clients = [],
                           {selectedIds.has(c.id) && <CheckCircle2 className="w-3 h-3 text-white" />}
                         </button>
                       </td>
-                      <td className="p-4 shadow-[1px_0_0_0_#e5e7eb] transition-colors">
+                      <td className="sticky left-10 z-10 bg-white group-hover:bg-surface-container-low p-4 shadow-[1px_0_0_0_#e5e7eb] transition-colors">
                         <div className="font-bold text-primary text-sm">{c.rol}</div>
                       </td>
                       <td className="p-4 text-sm text-on-surface-variant text-center whitespace-nowrap">{formatDate(c.fechaIngreso)}</td>

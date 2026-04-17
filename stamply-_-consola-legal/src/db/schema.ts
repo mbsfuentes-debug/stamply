@@ -75,15 +75,18 @@ CREATE TABLE IF NOT EXISTS cases (
 
 -- ─── Demandados normalizados por causa ────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS defendants (
-  id         TEXT PRIMARY KEY,
-  case_id    TEXT NOT NULL REFERENCES cases(id) ON DELETE CASCADE,
-  name       TEXT NOT NULL,
-  rut        TEXT NOT NULL DEFAULT '',
-  address    TEXT NOT NULL DEFAULT '',
-  city       TEXT NOT NULL DEFAULT '',
-  legal_rep  TEXT NOT NULL DEFAULT '',
-  is_primary INTEGER NOT NULL DEFAULT 0,
-  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  id              TEXT PRIMARY KEY,
+  case_id         TEXT NOT NULL REFERENCES cases(id) ON DELETE CASCADE,
+  name            TEXT NOT NULL,
+  rut             TEXT NOT NULL DEFAULT '',
+  address         TEXT NOT NULL DEFAULT '',
+  city            TEXT NOT NULL DEFAULT '',
+  legal_rep       TEXT NOT NULL DEFAULT '',
+  gender          TEXT NOT NULL DEFAULT '',        -- 'Masculino' | 'Femenino' | ''
+  legal_rep_rut   TEXT NOT NULL DEFAULT '',        -- RUT del representante legal
+  legal_rep_gender TEXT NOT NULL DEFAULT '',       -- 'Masculino' | 'Femenino' | ''
+  is_primary      INTEGER NOT NULL DEFAULT 0,
+  created_at      TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
 -- ─── Trámites (módulo central) ────────────────────────────────────────────────
