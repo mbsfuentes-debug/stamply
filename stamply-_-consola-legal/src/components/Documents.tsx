@@ -18,7 +18,8 @@ export default function Documents({ documents, setDocuments }: DocumentsProps) {
     doc.type.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
-  const handleDelete = (id: string) => {
+  const handleDelete = async (id: string) => {
+    try { await fetch(`/api/documents/${id}`, { method: 'DELETE' }); } catch {}
     setDocuments(documents.filter(doc => doc.id !== id));
     if (selectedDoc?.id === id) {
       setView('list');

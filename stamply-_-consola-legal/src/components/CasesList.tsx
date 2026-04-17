@@ -1,7 +1,10 @@
 import React, { useState } from 'react';
-import { Search, Filter, Edit2, MessageSquare, CheckCircle2, ArrowLeft, FileText, ChevronRight, ArrowUpDown, ArrowUp, ArrowDown, MapPin, Building2, Calendar, DollarSign, Download, CreditCard, AlertTriangle, Map, Plus, Trash2, ExternalLink, User } from 'lucide-react';
+import { Search, Filter, Edit2, MessageSquare, CheckCircle2, ArrowLeft, FileText, ChevronRight, ArrowUpDown, ArrowUp, ArrowDown, MapPin, Building2, Calendar, DollarSign, Download, CreditCard, AlertTriangle, Map, Plus, Trash2, ExternalLink, User, ClipboardList, Pencil, X } from 'lucide-react';
 import { cn, formatDate, formatRut, validateRut } from '../lib/utils';
 import { Client } from './Clients';
+import { Tramite, TRAMITE_TYPES } from '../types';
+import TramiteStatusBadge from './TramiteStatusBadge';
+import TramiteForm from './TramiteForm';
 
 // Mock data actualizada con los nuevos campos
 export const INITIAL_CASES = [
@@ -187,7 +190,7 @@ export const INITIAL_CASES = [
   }
 ];
 
-export default function CasesList({ cases, setCases, setActiveTab, clients = [], setClients }: { cases: any[], setCases: (cases: any[]) => void, setActiveTab?: (tab: string) => void, clients?: Client[], setClients?: (clients: Client[]) => void }) {
+export default function CasesList({ cases, setCases, setActiveTab, clients = [], setClients, tramites = [], setTramites }: { cases: any[], setCases: (cases: any[]) => void, setActiveTab?: (tab: string) => void, clients?: Client[], setClients?: (clients: Client[]) => void, tramites?: Tramite[], setTramites?: (t: Tramite[]) => void }) {
   const [searchTerm, setSearchTerm] = useState('');
   const [view, setView] = useState<'list' | 'detail' | 'edit'>('list');
   const [selectedCaseData, setSelectedCaseData] = useState<any>(null);
@@ -205,6 +208,13 @@ export default function CasesList({ cases, setCases, setActiveTab, clients = [],
   const [newPortfolioData, setNewPortfolioData] = useState({ name: '' });
 
   const [sortConfig, setSortConfig] = useState<{ key: string, direction: 'asc' | 'desc' }>({ key: '', direction: 'asc' });
+  const [detailTab, setDetailTab] = useState<'info' | 'tramites'>('info');
+  const [showTramiteForm, setShowTramiteForm] = useState(false);
+  const [editingTramite, setEditingTramite] = useState<Tramite | null>(null);
+
+  // Multi-select state
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   const filteredCases = cases.filter(c => 
     c.rol.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -236,8 +246,19 @@ export default function CasesList({ cases, setCases, setActiveTab, clients = [],
     setSortConfig({ key, direction });
   };
 
+  const persistCase = (updated: any) => {
+    fetch(`/api/cases/${updated.id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(updated),
+    }).catch(err => console.warn('[CasesList] persistCase error:', err));
+  };
+
   const handleSaveObservation = (id: string) => {
-    setCases(cases.map(c => c.id === id ? { ...c, observations: observationText } : c));
+    const updated = cases.map(c => c.id === id ? { ...c, observations: observationText } : c);
+    setCases(updated);
+    const updatedCase = updated.find(c => c.id === id);
+    if (updatedCase) persistCase(updatedCase);
     if (selectedCaseData?.id === id) {
       setSelectedCaseData({ ...selectedCaseData, observations: observationText });
     }
@@ -248,6 +269,7 @@ export default function CasesList({ cases, setCases, setActiveTab, clients = [],
   const handleSaveCase = () => {
     if (editingCase) {
       setCases(cases.map(c => c.id === editingCase.id ? editingCase : c));
+      persistCase(editingCase);
       setSelectedCaseData(editingCase);
       setView('detail');
       setEditingCase(null);
@@ -273,7 +295,7 @@ export default function CasesList({ cases, setCases, setActiveTab, clients = [],
     setView('edit');
   };
 
-  const handleCreateClient = () => {
+  const handleCreateClient = async () => {
     if (!newClientData.name) {
       alert('Por favor ingrese un nombre.');
       return;
@@ -295,10 +317,22 @@ export default function CasesList({ cases, setCases, setActiveTab, clients = [],
     };
 
     if (setClients) {
-      setClients([...clients, newClient]);
-    }
-    if (editingCase) {
-      setEditingCase({ ...editingCase, cliente: newClient.name, cartera: '' });
+      try {
+        const saved = await fetch('/api/clients', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(newClient),
+        }).then(r => r.json());
+        setClients([...clients, saved]);
+        if (editingCase) {
+          setEditingCase({ ...editingCase, cliente: saved.name, cartera: '' });
+        }
+      } catch {
+        setClients([...clients, newClient]);
+        if (editingCase) {
+          setEditingCase({ ...editingCase, cliente: newClient.name, cartera: '' });
+        }
+      }
     }
     setShowNewClientModal(false);
     setNewClientData({ name: '', type: 'Abogado Independiente', paymentTerm: 'inmediato' });
@@ -360,7 +394,78 @@ export default function CasesList({ cases, setCases, setActiveTab, clients = [],
 
   const handleViewDetail = (c: any) => {
     setSelectedCaseData(c);
+    setDetailTab('info');
     setView('detail');
+  };
+
+  // ── Multi-select helpers ────────────────────────────────────────────
+  const toggleSelect = (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedIds.size === sortedCases.length) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(sortedCases.map(c => c.id)));
+    }
+  };
+
+  const handleDeleteSelected = async () => {
+    const ids = Array.from(selectedIds);
+    // Delete from API
+    await Promise.allSettled(
+      ids.map(id => fetch(`/api/cases/${id}`, { method: 'DELETE' }))
+    );
+    // Delete associated tramites
+    if (setTramites) {
+      const tramiteIdsToDelete = tramites
+        .filter(t => ids.includes(t.causaId))
+        .map(t => t.id);
+      await Promise.allSettled(
+        tramiteIdsToDelete.map(tid => fetch(`/api/tramites/${tid}`, { method: 'DELETE' }))
+      );
+      setTramites(tramites.filter(t => !ids.includes(t.causaId)));
+    }
+    setCases(cases.filter(c => !ids.includes(c.id)));
+    setSelectedIds(new Set());
+    setShowDeleteConfirm(false);
+  };
+
+  const casaTramites = tramites.filter(t => t.causaId === selectedCaseData?.id);
+
+  const handleSaveTramite = async (tramite: Tramite) => {
+    if (!setTramites) return;
+    if (editingTramite) {
+      try {
+        const saved = await fetch(`/api/tramites/${tramite.id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(tramite),
+        }).then(r => r.json());
+        setTramites(tramites.map(t => t.id === tramite.id ? saved : t));
+      } catch {
+        setTramites(tramites.map(t => t.id === tramite.id ? tramite : t));
+      }
+    } else {
+      try {
+        const saved = await fetch('/api/tramites', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(tramite),
+        }).then(r => r.json());
+        setTramites([saved, ...tramites]);
+      } catch {
+        setTramites([tramite, ...tramites]);
+      }
+    }
+    setShowTramiteForm(false);
+    setEditingTramite(null);
   };
 
   const renderDetail = () => {
@@ -381,7 +486,7 @@ export default function CasesList({ cases, setCases, setActiveTab, clients = [],
             </div>
           </div>
           <div className="flex gap-3">
-            <button 
+            <button
               onClick={() => handleEditCase(selectedCaseData)}
               className="px-4 py-2 border border-outline text-on-surface-variant font-bold text-sm rounded-xl hover:bg-surface-container transition-all flex items-center"
             >
@@ -390,7 +495,82 @@ export default function CasesList({ cases, setCases, setActiveTab, clients = [],
           </div>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        {/* Detail Tabs */}
+        <div className="flex gap-1 border-b border-outline">
+          {[
+            { id: 'info', label: 'Información', icon: FileText },
+            { id: 'tramites', label: `Trámites (${casaTramites.length})`, icon: ClipboardList },
+          ].map(tab => (
+            <button
+              key={tab.id}
+              onClick={() => setDetailTab(tab.id as 'info' | 'tramites')}
+              className={cn(
+                'flex items-center gap-2 px-5 py-3 text-sm font-bold transition-all border-b-2 -mb-px',
+                detailTab === tab.id
+                  ? 'border-secondary text-secondary'
+                  : 'border-transparent text-on-surface-variant hover:text-on-surface'
+              )}
+            >
+              <tab.icon className="w-4 h-4" />
+              {tab.label}
+            </button>
+          ))}
+        </div>
+
+        {/* Trámites Tab Content */}
+        {detailTab === 'tramites' && (
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <p className="text-sm text-on-surface-variant font-medium">{casaTramites.length} trámite(s) para esta causa</p>
+              <button
+                onClick={() => { setEditingTramite(null); setShowTramiteForm(true); }}
+                className="flex items-center gap-2 px-4 py-2 bg-secondary text-white font-bold text-sm rounded-xl hover:bg-secondary/90 transition-all"
+              >
+                <Plus className="w-4 h-4" />
+                Nuevo Trámite
+              </button>
+            </div>
+            {casaTramites.length === 0 ? (
+              <div className="minimal-card p-12 bg-white text-center">
+                <ClipboardList className="w-8 h-8 text-on-surface-variant/30 mx-auto mb-3" />
+                <p className="text-sm font-bold text-on-surface-variant">Sin trámites registrados</p>
+                <p className="text-xs text-on-surface-variant/60 mt-1">Crea el primer trámite para esta causa</p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {casaTramites.map(t => (
+                  <div key={t.id} className="minimal-card p-5 bg-white flex items-center gap-4">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 mb-1">
+                        <p className="text-sm font-bold text-primary truncate">{t.type}</p>
+                        {t.urgente && <AlertTriangle className="w-3.5 h-3.5 text-error shrink-0" />}
+                      </div>
+                      <div className="flex items-center gap-3 flex-wrap">
+                        <TramiteStatusBadge status={t.status} />
+                        <span className="text-[10px] text-on-surface-variant">{formatDate(t.fechaRealizado)} {t.horaRealizado} hrs</span>
+                        {t.resultado && <span className="text-xs text-on-surface-variant truncate max-w-[200px]">{t.resultado}</span>}
+                      </div>
+                    </div>
+                    <div className="text-right shrink-0">
+                      <p className="text-base font-bold text-secondary">${(t.monto + t.distanceFee).toLocaleString('es-CL')}</p>
+                      {t.facturado && <span className="text-[9px] font-bold text-success uppercase tracking-wider">Facturado</span>}
+                    </div>
+                    <div className="flex gap-1 shrink-0">
+                      <button onClick={() => { setEditingTramite(t); setShowTramiteForm(true); }} className="p-1.5 hover:bg-surface-container rounded-lg transition-colors" title="Editar">
+                        <Pencil className="w-3.5 h-3.5 text-on-surface-variant" />
+                      </button>
+                      <button onClick={async () => { if(setTramites) { try { await fetch(`/api/tramites/${t.id}`, { method: 'DELETE' }); } catch {} setTramites(tramites.filter(x => x.id !== t.id)); } }} className="p-1.5 hover:bg-error/10 rounded-lg transition-colors" title="Eliminar">
+                        <Trash2 className="w-3.5 h-3.5 text-error" />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {detailTab === 'info' && <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           <div className="lg:col-span-2 space-y-8">
             <section className="minimal-card p-8 bg-white">
               <div className="flex items-center justify-between mb-8">
@@ -621,8 +801,10 @@ export default function CasesList({ cases, setCases, setActiveTab, clients = [],
                   <button 
                     onClick={() => {
                       const newStatus = selectedCaseData.estadoPago === 'Pagado' ? 'Pendiente' : 'Pagado';
-                      setCases(cases.map(c => c.id === selectedCaseData.id ? { ...c, estadoPago: newStatus } : c));
-                      setSelectedCaseData({ ...selectedCaseData, estadoPago: newStatus });
+                      const updated = { ...selectedCaseData, estadoPago: newStatus };
+                      setCases(cases.map(c => c.id === selectedCaseData.id ? updated : c));
+                      setSelectedCaseData(updated);
+                      persistCase(updated);
                     }}
                     className={cn(
                       "p-4 border rounded-2xl font-bold text-[10px] uppercase tracking-wider flex flex-col items-center gap-2 transition-all",
@@ -636,8 +818,10 @@ export default function CasesList({ cases, setCases, setActiveTab, clients = [],
                   <button 
                     onClick={() => {
                       const newUrgent = !selectedCaseData.urgente;
-                      setCases(cases.map(c => c.id === selectedCaseData.id ? { ...c, urgente: newUrgent } : c));
-                      setSelectedCaseData({ ...selectedCaseData, urgente: newUrgent });
+                      const updated = { ...selectedCaseData, urgente: newUrgent };
+                      setCases(cases.map(c => c.id === selectedCaseData.id ? updated : c));
+                      setSelectedCaseData(updated);
+                      persistCase(updated);
                     }}
                     className={cn(
                       "p-4 border rounded-2xl font-bold text-[10px] uppercase tracking-wider flex flex-col items-center gap-2 transition-all",
@@ -659,7 +843,20 @@ export default function CasesList({ cases, setCases, setActiveTab, clients = [],
               </div>
             </section>
           </div>
-        </div>
+        </div>}
+
+        {/* TramiteForm Modal */}
+        {showTramiteForm && selectedCaseData && (
+          <TramiteForm
+            causaId={selectedCaseData.id}
+            causaRol={selectedCaseData.rol}
+            clienteNombre={selectedCaseData.cliente}
+            paymentTermSnapshot="30_dias"
+            onSave={handleSaveTramite}
+            onCancel={() => { setShowTramiteForm(false); setEditingTramite(null); }}
+            existing={editingTramite ?? undefined}
+          />
+        )}
       </div>
     );
   };
@@ -928,13 +1125,55 @@ export default function CasesList({ cases, setCases, setActiveTab, clients = [],
             </div>
           </div>
 
+          {/* Floating selection action bar */}
+          {selectedIds.size > 0 && (
+            <div className="fixed bottom-8 left-1/2 -translate-x-1/2 z-40 flex items-center gap-4 px-6 py-4 bg-primary text-white rounded-2xl shadow-2xl shadow-primary/30 animate-in slide-in-from-bottom-4 duration-300">
+              <div className="flex items-center gap-2">
+                <div className="w-6 h-6 bg-white/20 rounded-lg flex items-center justify-center text-xs font-black">{selectedIds.size}</div>
+                <span className="text-sm font-bold">{selectedIds.size === 1 ? 'causa seleccionada' : 'causas seleccionadas'}</span>
+              </div>
+              <div className="w-px h-6 bg-white/30" />
+              <button
+                onClick={() => setSelectedIds(new Set())}
+                className="flex items-center gap-1.5 text-sm font-bold text-white/70 hover:text-white transition-colors"
+              >
+                <X className="w-4 h-4" /> Deseleccionar
+              </button>
+              <button
+                onClick={() => setShowDeleteConfirm(true)}
+                className="flex items-center gap-2 px-4 py-2 bg-error text-white font-bold text-sm rounded-xl hover:bg-error/90 transition-all shadow-lg shadow-error/30"
+              >
+                <Trash2 className="w-4 h-4" /> Eliminar
+              </button>
+            </div>
+          )}
+
           <div className="minimal-card bg-white overflow-hidden">
             {/* Desktop Table View */}
             <div className="hidden md:block overflow-x-auto pb-4">
               <table className="w-full text-left border-collapse whitespace-nowrap">
                 <thead>
                   <tr className="bg-surface-container/30 border-b border-outline">
-                    <th className="sticky left-0 z-10 bg-surface-container/30 p-4 text-xs font-bold text-primary uppercase tracking-wider shadow-[1px_0_0_0_#e5e7eb] cursor-pointer hover:bg-surface-container/50 transition-colors" onClick={() => handleSort('rol')}>
+                    {/* Checkbox column */}
+                    <th className="sticky left-0 z-10 bg-surface-container/30 p-4 shadow-[1px_0_0_0_#e5e7eb] w-10">
+                      <button
+                        onClick={toggleSelectAll}
+                        className="w-5 h-5 rounded-md border-2 flex items-center justify-center transition-all"
+                        style={{
+                          borderColor: selectedIds.size === sortedCases.length && sortedCases.length > 0 ? 'var(--color-secondary)' : 'var(--color-outline)',
+                          background: selectedIds.size === sortedCases.length && sortedCases.length > 0 ? 'var(--color-secondary)' : 'transparent',
+                        }}
+                        title={selectedIds.size === sortedCases.length ? 'Deseleccionar todo' : 'Seleccionar todo'}
+                      >
+                        {selectedIds.size === sortedCases.length && sortedCases.length > 0 && (
+                          <CheckCircle2 className="w-3 h-3 text-white" />
+                        )}
+                        {selectedIds.size > 0 && selectedIds.size < sortedCases.length && (
+                          <div className="w-2 h-0.5 bg-secondary rounded" />
+                        )}
+                      </button>
+                    </th>
+                    <th className="p-4 text-xs font-bold text-primary uppercase tracking-wider cursor-pointer hover:bg-surface-container/50 transition-colors" onClick={() => handleSort('rol')}>
                       <div className="flex items-center gap-1">
                         Rol
                         {sortConfig.key === 'rol' ? (sortConfig.direction === 'asc' ? <ArrowUp className="w-3 h-3" /> : <ArrowDown className="w-3 h-3" />) : <ArrowUpDown className="w-3 h-3 text-on-surface-variant/50" />}
@@ -984,8 +1223,24 @@ export default function CasesList({ cases, setCases, setActiveTab, clients = [],
                 </thead>
                 <tbody className="divide-y divide-outline/50">
                   {sortedCases.map((c) => (
-                    <tr key={c.id} className="hover:bg-surface-container/10 transition-colors group cursor-pointer" onClick={() => handleViewDetail(c)}>
-                      <td className="sticky left-0 z-10 bg-white group-hover:bg-surface-container-low p-4 shadow-[1px_0_0_0_#e5e7eb] transition-colors">
+                    <tr
+                      key={c.id}
+                      className={`hover:bg-surface-container/10 transition-colors group cursor-pointer ${selectedIds.has(c.id) ? 'bg-secondary/5' : ''}`}
+                      onClick={() => handleViewDetail(c)}
+                    >
+                      {/* Checkbox cell */}
+                      <td className="sticky left-0 z-10 bg-white group-hover:bg-surface-container-low p-4 shadow-[1px_0_0_0_#e5e7eb] transition-colors w-10" onClick={(e) => toggleSelect(c.id, e)}>
+                        <button
+                          className="w-5 h-5 rounded-md border-2 flex items-center justify-center transition-all"
+                          style={{
+                            borderColor: selectedIds.has(c.id) ? 'var(--color-secondary)' : 'var(--color-outline)',
+                            background: selectedIds.has(c.id) ? 'var(--color-secondary)' : 'transparent',
+                          }}
+                        >
+                          {selectedIds.has(c.id) && <CheckCircle2 className="w-3 h-3 text-white" />}
+                        </button>
+                      </td>
+                      <td className="p-4 shadow-[1px_0_0_0_#e5e7eb] transition-colors">
                         <div className="font-bold text-primary text-sm">{c.rol}</div>
                       </td>
                       <td className="p-4 text-sm text-on-surface-variant text-center whitespace-nowrap">{formatDate(c.fechaIngreso)}</td>
@@ -1046,9 +1301,26 @@ export default function CasesList({ cases, setCases, setActiveTab, clients = [],
             {/* Mobile Card View */}
             <div className="md:hidden flex flex-col divide-y divide-outline/50">
               {sortedCases.map((c) => (
-                <div key={c.id} className="p-4 hover:bg-surface-container/10 transition-colors cursor-pointer space-y-3" onClick={() => handleViewDetail(c)}>
+                <div
+                  key={c.id}
+                  className={`p-4 transition-colors cursor-pointer space-y-3 ${selectedIds.has(c.id) ? 'bg-secondary/5' : 'hover:bg-surface-container/10'}`}
+                  onClick={() => handleViewDetail(c)}
+                >
                   <div className="flex justify-between items-start">
-                    <div className="font-bold text-primary text-base">{c.rol}</div>
+                    <div className="flex items-center gap-3">
+                      {/* Mobile checkbox */}
+                      <button
+                        className="w-5 h-5 rounded-md border-2 flex items-center justify-center transition-all shrink-0"
+                        style={{
+                          borderColor: selectedIds.has(c.id) ? 'var(--color-secondary)' : 'var(--color-outline)',
+                          background: selectedIds.has(c.id) ? 'var(--color-secondary)' : 'transparent',
+                        }}
+                        onClick={(e) => toggleSelect(c.id, e)}
+                      >
+                        {selectedIds.has(c.id) && <CheckCircle2 className="w-3 h-3 text-white" />}
+                      </button>
+                      <div className="font-bold text-primary text-base">{c.rol}</div>
+                    </div>
                     <span className={cn(
                       "badge text-[10px]",
                       c.estadoPago === 'Pagado' ? "badge-success" :
@@ -1093,6 +1365,73 @@ export default function CasesList({ cases, setCases, setActiveTab, clients = [],
         </div>
       )}
 
+
+      {/* ── Delete Confirmation Modal ──────────────────────────────────── */}
+      {showDeleteConfirm && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl p-8 w-full max-w-md animate-in zoom-in-95 duration-200 shadow-2xl border border-outline">
+            {/* Icon header */}
+            <div className="flex flex-col items-center text-center mb-8">
+              <div className="w-16 h-16 bg-error/10 rounded-2xl flex items-center justify-center mb-5 border border-error/20">
+                <Trash2 className="w-8 h-8 text-error" />
+              </div>
+              <h3 className="text-xl font-bold text-primary tracking-tight">
+                {selectedIds.size === 1 ? 'Eliminar causa' : `Eliminar ${selectedIds.size} causas`}
+              </h3>
+              <p className="text-sm text-on-surface-variant mt-2 leading-relaxed">
+                {selectedIds.size === 1
+                  ? 'Estás a punto de eliminar la causa seleccionada.'
+                  : `Estás a punto de eliminar las ${selectedIds.size} causas seleccionadas.`}
+              </p>
+            </div>
+
+            {/* Warning callout */}
+            <div className="p-4 bg-error/5 rounded-2xl border border-error/20 flex items-start gap-3 mb-8">
+              <AlertTriangle className="w-5 h-5 text-error shrink-0 mt-0.5" />
+              <div>
+                <p className="text-xs font-bold text-error uppercase tracking-wider mb-1">Acción irreversible</p>
+                <p className="text-xs text-on-surface-variant leading-relaxed">
+                  Se eliminarán también todos los <strong>trámites asociados</strong> a {selectedIds.size === 1 ? 'esta causa' : 'estas causas'}. Esta acción no se puede deshacer.
+                </p>
+                {/* List of selected cases */}
+                <div className="mt-3 space-y-1">
+                  {cases
+                    .filter(c => selectedIds.has(c.id))
+                    .map(c => {
+                      const count = tramites.filter(t => t.causaId === c.id).length;
+                      return (
+                        <div key={c.id} className="flex items-center justify-between">
+                          <span className="text-xs font-bold text-primary">{c.rol}</span>
+                          {count > 0 && (
+                            <span className="text-[10px] text-error font-bold uppercase tracking-wider">{count} trámite{count !== 1 ? 's' : ''}</span>
+                          )}
+                        </div>
+                      );
+                    })
+                  }
+                </div>
+              </div>
+            </div>
+
+            {/* Actions */}
+            <div className="flex gap-3">
+              <button
+                onClick={() => setShowDeleteConfirm(false)}
+                className="flex-1 px-6 py-3.5 border border-outline text-on-surface-variant font-bold text-sm rounded-xl hover:bg-surface-container transition-all"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={handleDeleteSelected}
+                className="flex-1 px-6 py-3.5 bg-error text-white font-bold text-sm rounded-xl hover:bg-error/90 transition-all shadow-lg shadow-error/20 flex items-center justify-center gap-2"
+              >
+                <Trash2 className="w-4 h-4" />
+                Sí, eliminar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Observation Modal */}
       {selectedCase && (

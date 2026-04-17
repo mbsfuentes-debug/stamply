@@ -44,20 +44,21 @@ export default function SmartRoute({ cases = [], clients = [] }: { cases?: any[]
     const client = getClient(c.cliente);
     let score = 0;
 
-    // 1. Base score by payment/urgency
-    if (c.urgente || c.estadoPago === 'Pagado') {
-      score = 100;
-    } else if (client) {
-      if (client.paymentTerm === 'inmediato' || client.paymentTerm === '10_dias') score = 80;
-      else if (client.paymentTerm === '30_dias') score = 50;
-      else if (client.paymentTerm === '45_dias') score = 30;
+    // 1. Urgente: máxima prioridad absoluta
+    if (c.urgente) {
+      score = 1000;
+    } else {
+      // 2. Escala por plazo de pago del cliente
+      const paymentTerm = c.payment_term_snapshot || client?.paymentTerm;
+      if (paymentTerm === 'inmediato') score = 400;
+      else if (paymentTerm === '10_dias') score = 300;
+      else if (paymentTerm === '30_dias') score = 200;
+      else if (paymentTerm === '45_dias') score = 100;
+      else score = 100; // sin término definido = menor prioridad
     }
 
-    // 2. Bonus
-    if (client?.isVip) score += 20;
-
-    const daysOld = Math.floor((new Date().getTime() - new Date(c.fechaIngreso).getTime()) / (1000 * 3600 * 24));
-    score += Math.min(daysOld, 30); // Max 30 points for age
+    // 3. Bonus VIP
+    if (client?.isVip) score += 50;
 
     return score;
   }
@@ -172,22 +173,41 @@ export default function SmartRoute({ cases = [], clients = [] }: { cases?: any[]
             </h4>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 text-sm">
               <div>
-                <p className="font-bold text-on-surface mb-1">1. Prioridad (Score)</p>
-                <ul className="list-disc list-inside text-on-surface-variant space-y-1 text-xs">
-                  <li>Urgente o Pagado: 100 pts</li>
-                  <li>Pago ≤ 10 días: 80 pts</li>
-                  <li>Pago 30 días: 50 pts</li>
-                  <li>Pago 45 días: 30 pts</li>
-                  <li>Bonus VIP: +20 pts</li>
-                  <li>Antigüedad: hasta +30 pts</li>
-                </ul>
+                <p className="font-bold text-on-surface mb-2">1. Prioridad (Score)</p>
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="flex items-center gap-1.5 text-error font-bold"><span className="w-2 h-2 rounded-full bg-error inline-block"></span>Urgente</span>
+                    <span className="font-bold text-error">1.000 pts</span>
+                  </div>
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="flex items-center gap-1.5 text-on-surface-variant"><span className="w-2 h-2 rounded-full bg-secondary inline-block"></span>Pago inmediato</span>
+                    <span className="font-bold text-secondary">400 pts</span>
+                  </div>
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="flex items-center gap-1.5 text-on-surface-variant"><span className="w-2 h-2 rounded-full bg-primary/50 inline-block"></span>Pago 10 días</span>
+                    <span className="font-bold text-on-surface">300 pts</span>
+                  </div>
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="flex items-center gap-1.5 text-on-surface-variant"><span className="w-2 h-2 rounded-full bg-outline inline-block"></span>Pago 30 días</span>
+                    <span className="font-bold text-on-surface-variant">200 pts</span>
+                  </div>
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="flex items-center gap-1.5 text-on-surface-variant"><span className="w-2 h-2 rounded-full bg-outline/60 inline-block"></span>Pago 45 días</span>
+                    <span className="font-bold text-on-surface-variant">100 pts</span>
+                  </div>
+                  <div className="flex items-center justify-between text-xs pt-1 border-t border-outline/50 mt-1">
+                    <span className="text-on-surface-variant">Bonus Cliente VIP</span>
+                    <span className="font-bold text-secondary">+50 pts</span>
+                  </div>
+                </div>
               </div>
               <div>
-                <p className="font-bold text-on-surface mb-1">2. Agrupación Geográfica</p>
-                <ul className="list-disc list-inside text-on-surface-variant space-y-1 text-xs">
+                <p className="font-bold text-on-surface mb-2">2. Agrupación Geográfica</p>
+                <ul className="list-disc list-inside text-on-surface-variant space-y-1.5 text-xs">
                   <li>Máximo 20 causas por ruta</li>
                   <li>Agrupación por cercanía de comunas</li>
                   <li>Ordenamiento interno por distancia</li>
+                  <li>Plazo de pago desde ficha del cliente</li>
                 </ul>
               </div>
             </div>
@@ -275,11 +295,15 @@ export default function SmartRoute({ cases = [], clients = [] }: { cases?: any[]
                                   <AlertCircle className="w-3 h-3" /> Urgente
                                 </span>
                               )}
-                              {c.estadoPago === 'Pagado' && (
-                                <span className="bg-success/10 text-success text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-widest flex items-center gap-1">
-                                  <CheckCircle2 className="w-3 h-3" /> Pagado
-                                </span>
-                              )}
+                              {!c.urgente && (() => {
+                                const client = getClient(c.cliente);
+                                const pt = c.payment_term_snapshot || client?.paymentTerm;
+                                if (pt === 'inmediato') return <span className="bg-secondary/10 text-secondary text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-widest">Inmediato</span>;
+                                if (pt === '10_dias') return <span className="bg-primary/10 text-primary text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-widest">10 días</span>;
+                                if (pt === '30_dias') return <span className="bg-surface-container text-on-surface-variant text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-widest">30 días</span>;
+                                if (pt === '45_dias') return <span className="bg-surface-container text-on-surface-variant text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-widest">45 días</span>;
+                                return null;
+                              })()}
                             </div>
                             <p className="text-xs font-bold text-on-surface">{c.demandado}</p>
                           </div>

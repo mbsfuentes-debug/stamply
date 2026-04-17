@@ -52,6 +52,7 @@ export default function Sidebar({ activeTab, setActiveTab, isCollapsed, setIsCol
 
   const navItems = [
     { id: 'cases', label: 'Causas', icon: FolderIcon },
+    { id: 'tramites', label: 'Trámites', icon: ChartIcon },
     { id: 'smart-estampe', label: 'Estampe Inteligente', icon: Sparkles },
     { id: 'template-library', label: 'Biblioteca de Modelos', icon: BookOpen },
     { id: 'documents', label: 'Documentos', icon: FileIcon },

@@ -52,7 +52,7 @@ export default function TemplateLibrary({ templates, setTemplates }: TemplateLib
     setView('edit');
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!currentTemplate?.name || !currentTemplate?.content) {
       setError("El nombre y el contenido son obligatorios.");
       setTimeout(() => setError(null), 3000);
@@ -61,11 +61,31 @@ export default function TemplateLibrary({ templates, setTemplates }: TemplateLib
 
     const existingIndex = templates.findIndex(t => t.id === currentTemplate.id);
     if (existingIndex >= 0) {
-      const newTemplates = [...templates];
-      newTemplates[existingIndex] = currentTemplate;
-      setTemplates(newTemplates);
+      try {
+        const saved = await fetch(`/api/templates/${currentTemplate.id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(currentTemplate),
+        }).then(r => r.json());
+        const newTemplates = [...templates];
+        newTemplates[existingIndex] = saved;
+        setTemplates(newTemplates);
+      } catch {
+        const newTemplates = [...templates];
+        newTemplates[existingIndex] = currentTemplate;
+        setTemplates(newTemplates);
+      }
     } else {
-      setTemplates([...templates, currentTemplate]);
+      try {
+        const saved = await fetch('/api/templates', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(currentTemplate),
+        }).then(r => r.json());
+        setTemplates([...templates, saved]);
+      } catch {
+        setTemplates([...templates, currentTemplate]);
+      }
     }
     setView('list');
     setCurrentTemplate(null);

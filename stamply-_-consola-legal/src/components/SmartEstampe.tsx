@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
 import { Search, FileText, Sparkles, Send, CheckCircle2, ChevronRight, Landmark, User, Building2, DollarSign, Users, Loader2, AlertCircle, ArrowLeft } from 'lucide-react';
-import { GoogleGenAI } from "@google/genai";
 import { cn } from '../lib/utils';
 
 import { Template } from './TemplateLibrary';
@@ -69,72 +68,51 @@ export default function SmartEstampe({ templates, clients, onSendToAuthorize }: 
   const generateEstampe = async () => {
     setIsGenerating(true);
     setError(null);
-    
+
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-
-      const prompt = `
-ROLE: Eres un Arquitecto Legal experto en el sistema judicial de Chile, especializado en la redacción técnica de actas para Receptores Judiciales. Tu función es transformar plantillas base en documentos finales listos para firma, garantizando precisión gramatical y cumplimiento de aranceles.
-
-INPUT DATA (JSON Context):
-{
-  "MODELO_BASE": "${selectedTemplate.content.replace(/"/g, '\\"')}",
-  "DATA_CAUSA": {
-    "ROL": "${selectedCase.rol}",
-    "Tribunal": "${selectedCase.tribunal}",
-    "Demandado": "${selectedCase.defendant}",
-    "Direccion": "${selectedCase.address}",
-    "Ciudad": "${selectedCase.city}",
-    "Cliente": "${selectedCase.cliente}"
-  },
-  "RESULTADO_TERRENO": {
-    "Fecha": "${resultDate}",
-    "Hora": "${resultTime}",
-    "Detalles": "${resultDetails}"
-  },
-  "TIPO_ENTIDAD": "${entityType}",
-  "MONTO_FINAL": ${montoFinal}
-}
-
-CORE LOGIC - REGLAS DE REDACCIÓN:
-1. Usa la Fecha y Hora proporcionadas en RESULTADO_TERRENO para establecer el momento exacto de la diligencia en el acta.
-2. Incorpora los "Detalles" del RESULTADO_TERRENO en la redacción del acta de forma natural, técnica y coherente con el modelo (ej. quién recibió, si el lugar estaba habitado, etc.).
-3. Aplica concordancia de género según TIPO_ENTIDAD:
-   - MALE: Usa "don", "el demandado", "notificado", "buscado", "él".
-   - FEMALE: Usa "doña", "la demandada", "notificada", "buscada", "ella".
-   - CORP: Usa "la empresa demandada" o "la sociedad demandada". Refiérete a la entidad en femenino ("la notificada").
-   - PLURAL: Usa "los demandados", "notificados", "ellos".
-
-REGLAS DE COBRO (INYECCIÓN DE VALOR):
-1. Busca la variable o el espacio destinado a honorarios en el MODELO_BASE.
-2. Inserta el MONTO_FINAL usando el formato contable chileno: $XX.XXX.- (con punto de mil y guion final).
-3. Si el modelo no especifica dónde ir, añade al final del acta una línea que diga: "Derechos: $XX.XXX.-" seguido de la glosa de impuestos si corresponde.
-
-RESTRICCIONES FORMALES:
-- Cero Ambigüedad: No utilices "/" (ej: no escribas "el/la"). Elige el término exacto.
-- Lenguaje Técnico: Mantén fórmulas legales chilenas como "certifico", "constituidome en el domicilio", "proveyendo la demanda", "fe de ello".
-- No Inventar: Si un dato necesario para completar una llave {{variable}} en el modelo no viene en DATA_CAUSA, mantén la llave resaltada para revisión humana.
-
-OUTPUT:
-Entrega exclusivamente el texto del acta redactada. Sin introducciones, sin explicaciones y sin notas al pie. El texto debe estar limpio para ser visualizado en un editor de texto.
-`;
-
-      const response = await ai.models.generateContent({
-        model: "gemini-3-flash-preview",
-        contents: prompt
+      const response = await fetch('/api/ai/generate-estampe', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          templateContent: selectedTemplate.content,
+          caseData: {
+            rol: selectedCase.rol,
+            tribunal: selectedCase.tribunal,
+            defendant: selectedCase.defendant,
+            address: selectedCase.address,
+            city: selectedCase.city,
+            cliente: selectedCase.cliente,
+          },
+          resultData: {
+            date: resultDate,
+            time: resultTime,
+            details: resultDetails,
+          },
+          entityType,
+          montoFinal,
+        }),
       });
-      
-      const text = response.text || "";
-      
+
+      if (!response.ok) {
+        const errData = await response.json().catch(() => ({}));
+        if (response.status === 429) {
+          throw new Error(errData.error || 'Límite de solicitudes de IA alcanzado. Intente más tarde.');
+        }
+        throw new Error(errData.error || 'Error al generar el acta.');
+      }
+
+      const data = await response.json();
+      const text = data.content || "";
+
       const formattedText = `<div class="font-serif p-12 bg-white text-on-surface shadow-inner min-h-[400px] leading-relaxed text-justify">
         ${text.replace(/\n/g, '<br/>')}
       </div>`;
-      
+
       setGeneratedContent(formattedText);
       setStep(4);
     } catch (err: any) {
       console.error("Error generating estampe:", err);
-      setError("Error al generar el acta. Por favor, intente de nuevo.");
+      setError(err.message || "Error al generar el acta. Por favor, intente de nuevo.");
     } finally {
       setIsGenerating(false);
     }

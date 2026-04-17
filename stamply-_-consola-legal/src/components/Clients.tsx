@@ -152,8 +152,9 @@ export default function Clients({ templates, clients, setClients }: ClientsProps
 
   const selectedClient = clients.find(c => c.id === selectedClientId);
 
-  const handleDelete = (id: string) => {
+  const handleDelete = async (id: string) => {
     if (confirm('¿Está seguro de eliminar este cliente?')) {
+      try { await fetch(`/api/clients/${id}`, { method: 'DELETE' }); } catch {}
       setClients(clients.filter(c => c.id !== id));
       if (selectedClientId === id) {
         setSelectedClientId(null);
@@ -174,22 +175,35 @@ export default function Clients({ templates, clients, setClients }: ClientsProps
     setIsClientModalOpen(true);
   };
 
-  const handleSaveClient = () => {
+  const handleSaveClient = async () => {
     if (!formData.name || !formData.rut) {
       alert('El nombre y el RUT son obligatorios.');
       return;
     }
 
     if (editingClient) {
-      setClients(clients.map(c => c.id === editingClient.id ? { ...c, ...formData } as Client : c));
+      try {
+        const saved = await fetch(`/api/clients/${editingClient.id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ...editingClient, ...formData }),
+        }).then(r => r.json());
+        setClients(clients.map(c => c.id === editingClient.id ? saved : c));
+      } catch {
+        setClients(clients.map(c => c.id === editingClient.id ? { ...c, ...formData } as Client : c));
+      }
     } else {
-      const newClient: Client = {
-        ...formData,
-        id: `client-${Date.now()}`,
-        casesCount: 0,
-        tariffs: []
-      } as Client;
-      setClients([...clients, newClient]);
+      try {
+        const saved = await fetch('/api/clients', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ...formData, casesCount: 0, tariffs: [] }),
+        }).then(r => r.json());
+        setClients([...clients, saved]);
+      } catch {
+        const newClient: Client = { ...formData, id: `client-${Date.now()}`, casesCount: 0, tariffs: [] } as Client;
+        setClients([...clients, newClient]);
+      }
     }
     setIsClientModalOpen(false);
   };

@@ -1,15 +1,15 @@
 import React, { useState, useMemo } from 'react';
-import { 
-  Search, 
-  Filter, 
-  DollarSign, 
-  FileText, 
-  ChevronRight, 
-  Building2, 
-  User, 
-  Calendar, 
-  CheckCircle2, 
-  Clock, 
+import {
+  Search,
+  Filter,
+  DollarSign,
+  FileText,
+  ChevronRight,
+  Building2,
+  User,
+  Calendar,
+  CheckCircle2,
+  Clock,
   AlertCircle,
   Download,
   Send,
@@ -22,12 +22,17 @@ import {
   Trash2,
   ArrowUpDown,
   ArrowUp,
-  ArrowDown
+  ArrowDown,
+  Mail,
+  Bell,
+  History,
+  X
 } from 'lucide-react';
 import { cn, formatDate } from '../lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
 
 import { Client } from './Clients';
+import { Tramite } from '../types';
 
 // Types
 interface BillingCase {
@@ -59,8 +64,19 @@ interface PaymentAlert {
   status: 'active' | 'dismissed' | 'paid';
 }
 
+interface EmailLog {
+  id: string;
+  invoiceId: string;
+  type: 'envio_boleta' | 'recordatorio' | 'confirmacion';
+  sentTo: string;
+  sentAt: string;
+  status: 'enviado' | 'fallido';
+}
+
 interface CollectionsProps {
   clients?: Client[];
+  tramites?: Tramite[];
+  setTramites?: (t: Tramite[]) => void;
 }
 
 // Mock Data
@@ -80,7 +96,7 @@ const MOCK_ALERTS: PaymentAlert[] = [
 
 const RETENTION_RATE = 0.1525; // 15.25%
 
-export default function Collections({ clients = [] }: CollectionsProps) {
+export default function Collections({ clients = [], tramites = [], setTramites }: CollectionsProps) {
   const [view, setView] = useState<'main' | 'batch'>('main');
   const [billingView, setBillingView] = useState<'todo' | 'por_cliente' | 'alertas'>('todo');
   const [selectedFirm, setSelectedFirm] = useState<string | null>(null);
@@ -95,6 +111,35 @@ export default function Collections({ clients = [] }: CollectionsProps) {
   const [alerts, setAlerts] = useState<PaymentAlert[]>(MOCK_ALERTS);
   const [selectedCases, setSelectedCases] = useState<string[]>([]);
   const [sortConfig, setSortConfig] = useState<{ key: keyof BillingCase | '', direction: 'asc' | 'desc' }>({ key: '', direction: 'asc' });
+  const [emailLogs, setEmailLogs] = useState<EmailLog[]>([]);
+  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+  const [selectedTramiteIds, setSelectedTramiteIds] = useState<string[]>([]);
+  const [showEmailHistory, setShowEmailHistory] = useState<string | null>(null); // invoiceId
+
+  const showToast = (message: string, type: 'success' | 'error' = 'success') => {
+    setToast({ message, type });
+    setTimeout(() => setToast(null), 4000);
+  };
+
+  const sendEmail = (invoiceId: string, clientName: string, emailType: EmailLog['type'], email?: string) => {
+    const targetEmail = email || clients.find(c => c.name === clientName)?.email || `contacto@${clientName.toLowerCase().replace(/\s+/g, '')}.cl`;
+    const newLog: EmailLog = {
+      id: Math.random().toString(36).substr(2, 9),
+      invoiceId,
+      type: emailType,
+      sentTo: targetEmail,
+      sentAt: new Date().toISOString(),
+      status: 'enviado'
+    };
+    setEmailLogs(prev => [newLog, ...prev]);
+
+    const messages: Record<EmailLog['type'], string> = {
+      envio_boleta: `Liquidación enviada a ${targetEmail}`,
+      recordatorio: `Recordatorio de pago enviado a ${targetEmail}`,
+      confirmacion: `Confirmación de pago enviada a ${targetEmail}`
+    };
+    showToast(messages[emailType]);
+  };
 
   // Calculations
   const calculateTax = (baseAmount: number) => {
@@ -220,6 +265,94 @@ export default function Collections({ clients = [] }: CollectionsProps) {
 
   return (
     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+      {/* Toast Notification */}
+      <AnimatePresence>
+        {toast && (
+          <motion.div
+            initial={{ opacity: 0, y: -20, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -20, scale: 0.95 }}
+            className={cn(
+              "fixed top-6 right-6 z-50 flex items-center gap-3 px-5 py-4 rounded-2xl shadow-xl text-sm font-bold max-w-sm",
+              toast.type === 'success' ? "bg-success text-white" : "bg-error text-white"
+            )}
+          >
+            {toast.type === 'success' ? <CheckCircle2 className="w-5 h-5 shrink-0" /> : <AlertCircle className="w-5 h-5 shrink-0" />}
+            <span>{toast.message}</span>
+            <button onClick={() => setToast(null)} className="ml-2 opacity-70 hover:opacity-100 transition-opacity">
+              <X className="w-4 h-4" />
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Email History Modal */}
+      <AnimatePresence>
+        {showEmailHistory && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+            onClick={() => setShowEmailHistory(null)}
+          >
+            <motion.div
+              initial={{ scale: 0.95, y: 20 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.95, y: 20 }}
+              onClick={e => e.stopPropagation()}
+              className="bg-white rounded-3xl p-8 max-w-md w-full shadow-2xl"
+            >
+              <div className="flex items-center justify-between mb-6">
+                <h3 className="text-lg font-bold text-primary flex items-center gap-2">
+                  <History className="w-5 h-5 text-secondary" />
+                  Historial de Comunicaciones
+                </h3>
+                <button onClick={() => setShowEmailHistory(null)} className="p-2 hover:bg-surface-container rounded-xl transition-colors">
+                  <X className="w-5 h-5 text-on-surface-variant" />
+                </button>
+              </div>
+              {emailLogs.filter(l => l.invoiceId === showEmailHistory).length === 0 ? (
+                <p className="text-sm text-on-surface-variant text-center py-8">Sin comunicaciones registradas para esta liquidación.</p>
+              ) : (
+                <div className="space-y-3 max-h-80 overflow-y-auto">
+                  {emailLogs.filter(l => l.invoiceId === showEmailHistory).map(log => (
+                    <div key={log.id} className="flex items-start gap-3 p-3 bg-surface-container/30 rounded-xl border border-outline/50">
+                      <div className={cn(
+                        "w-8 h-8 rounded-xl flex items-center justify-center shrink-0",
+                        log.type === 'envio_boleta' ? "bg-secondary/10 text-secondary" :
+                        log.type === 'recordatorio' ? "bg-warning/10 text-warning" : "bg-success/10 text-success"
+                      )}>
+                        {log.type === 'envio_boleta' ? <Mail className="w-4 h-4" /> :
+                         log.type === 'recordatorio' ? <Bell className="w-4 h-4" /> :
+                         <CheckCircle2 className="w-4 h-4" />}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs font-bold text-primary">
+                          {log.type === 'envio_boleta' ? 'Boleta enviada' :
+                           log.type === 'recordatorio' ? 'Recordatorio enviado' :
+                           'Pago confirmado'}
+                        </p>
+                        <p className="text-[10px] text-on-surface-variant truncate">{log.sentTo}</p>
+                        <p className="text-[10px] text-on-surface-variant mt-0.5">
+                          {new Date(log.sentAt).toLocaleDateString('es-CL', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                        </p>
+                      </div>
+                      <span className={cn(
+                        "text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0",
+                        log.status === 'enviado' ? "bg-success/10 text-success" : "bg-error/10 text-error"
+                      )}>
+                        {log.status}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {view === 'main' ? (
         <>
           {/* Header */}
@@ -338,7 +471,125 @@ export default function Collections({ clients = [] }: CollectionsProps) {
                 </span>
               )}
             </button>
+            <button
+              onClick={() => setBillingView('tramites' as any)}
+              className={cn(
+                "pb-3 text-sm font-bold uppercase tracking-widest transition-all border-b-2 flex items-center gap-2",
+                billingView === ('tramites' as any) ? "border-secondary text-secondary" : "border-transparent text-on-surface-variant hover:text-primary"
+              )}
+            >
+              Trámites
+              {tramites.filter(t => t.status === 'completado' && !t.facturado).length > 0 && (
+                <span className="bg-secondary text-white text-[10px] px-2 py-0.5 rounded-full">
+                  {tramites.filter(t => t.status === 'completado' && !t.facturado).length}
+                </span>
+              )}
+            </button>
           </div>
+
+          {/* Tramites Tab */}
+          {billingView === ('tramites' as any) && (() => {
+            const pendingTramites = tramites.filter(t => t.status === 'completado' && !t.facturado);
+            const totalPending = pendingTramites.reduce((s, t) => s + t.monto + t.distanceFee, 0);
+
+            const toggleSelect = (id: string) => {
+              setSelectedTramiteIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+            };
+            const selectAll = () => setSelectedTramiteIds(pendingTramites.map(t => t.id));
+            const clearAll = () => setSelectedTramiteIds([]);
+
+            const selectedTotal = pendingTramites
+              .filter(t => selectedTramiteIds.includes(t.id))
+              .reduce((s, t) => s + t.monto + t.distanceFee, 0);
+
+            const handleFacturar = async () => {
+              if (selectedTramiteIds.length === 0) { alert('Selecciona al menos un trámite.'); return; }
+              await Promise.allSettled(
+                selectedTramiteIds.map(id => {
+                  const t = tramites.find(x => x.id === id);
+                  if (!t) return Promise.resolve();
+                  return fetch(`/api/tramites/${id}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ ...t, facturado: true }),
+                  });
+                })
+              );
+              if (setTramites) {
+                setTramites(tramites.map(t => selectedTramiteIds.includes(t.id) ? { ...t, facturado: true } : t));
+              }
+              setSelectedTramiteIds([]);
+              showToast(`${selectedTramiteIds.length} trámite(s) marcados como facturados`);
+            };
+
+            return (
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-bold text-on-surface">{pendingTramites.length} trámite(s) listos para facturar</p>
+                    <p className="text-xs text-on-surface-variant">Total disponible: <span className="font-bold text-secondary">{formatCurrency(totalPending)}</span></p>
+                  </div>
+                  <div className="flex gap-3">
+                    {selectedTramiteIds.length > 0 ? (
+                      <>
+                        <span className="text-xs text-on-surface-variant self-center">{selectedTramiteIds.length} seleccionados · {formatCurrency(selectedTotal)}</span>
+                        <button onClick={clearAll} className="px-3 py-2 border border-outline text-xs font-bold text-on-surface-variant rounded-xl hover:bg-surface-container transition-all">Limpiar</button>
+                        <button onClick={handleFacturar} className="px-4 py-2 bg-secondary text-white text-xs font-bold rounded-xl hover:bg-secondary/90 transition-all flex items-center gap-2">
+                          <Receipt className="w-4 h-4" /> Crear Liquidación
+                        </button>
+                      </>
+                    ) : (
+                      <button onClick={selectAll} className="px-3 py-2 border border-outline text-xs font-bold text-on-surface-variant rounded-xl hover:bg-surface-container transition-all">Seleccionar Todo</button>
+                    )}
+                  </div>
+                </div>
+
+                {pendingTramites.length === 0 ? (
+                  <div className="minimal-card p-12 bg-white text-center">
+                    <CheckCircle2 className="w-8 h-8 text-success/40 mx-auto mb-3" />
+                    <p className="text-sm font-bold text-on-surface-variant">Sin trámites pendientes de facturar</p>
+                    <p className="text-xs text-on-surface-variant/60 mt-1">Todos los trámites completados ya fueron facturados</p>
+                  </div>
+                ) : (
+                  <div className="minimal-card bg-white overflow-hidden">
+                    <table className="w-full">
+                      <thead>
+                        <tr className="border-b border-outline">
+                          <th className="w-10 px-4 py-3"></th>
+                          <th className="text-left px-4 py-3 text-[10px] font-bold text-on-surface-variant uppercase tracking-widest">ROL / Cliente</th>
+                          <th className="text-left px-4 py-3 text-[10px] font-bold text-on-surface-variant uppercase tracking-widest">Tipo</th>
+                          <th className="text-left px-4 py-3 text-[10px] font-bold text-on-surface-variant uppercase tracking-widest">Fecha</th>
+                          <th className="text-right px-4 py-3 text-[10px] font-bold text-on-surface-variant uppercase tracking-widest">Monto</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {pendingTramites.map(t => (
+                          <tr key={t.id} className={cn("border-b border-outline/50 hover:bg-surface-container/30 transition-colors cursor-pointer", selectedTramiteIds.includes(t.id) && "bg-secondary/5")} onClick={() => toggleSelect(t.id)}>
+                            <td className="px-4 py-3">
+                              <input type="checkbox" checked={selectedTramiteIds.includes(t.id)} onChange={() => toggleSelect(t.id)} className="w-4 h-4 accent-secondary" onClick={e => e.stopPropagation()} />
+                            </td>
+                            <td className="px-4 py-3">
+                              <p className="text-sm font-bold text-primary">{t.causaRol}</p>
+                              <p className="text-xs text-on-surface-variant">{t.clienteNombre}</p>
+                            </td>
+                            <td className="px-4 py-3">
+                              <p className="text-xs text-on-surface max-w-[160px]">{t.type}</p>
+                            </td>
+                            <td className="px-4 py-3">
+                              <p className="text-xs text-on-surface-variant">{t.fechaRealizado}</p>
+                            </td>
+                            <td className="px-4 py-3 text-right">
+                              <p className="text-sm font-bold text-secondary">{formatCurrency(t.monto + t.distanceFee)}</p>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            );
+          })()}
 
           {billingView === 'todo' ? (
             <div className="minimal-card bg-white overflow-hidden">
@@ -630,26 +881,37 @@ export default function Collections({ clients = [] }: CollectionsProps) {
 
                     {alert.status === 'active' ? (
                       <div className="flex flex-col gap-3">
-                        <button 
-                          onClick={() => {
-                            alert(`Correo de cobranza enviado exitosamente a ${alert.clientName} desde noreply@stamply.cl`);
-                          }}
-                          className="w-full py-3 bg-error text-white font-bold text-sm rounded-xl hover:bg-error/90 transition-all flex items-center justify-center gap-2 shadow-lg shadow-error/20"
-                        >
-                          <Send className="w-4 h-4" />
-                          Enviar Correo de Cobranza
-                        </button>
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => sendEmail(alert.id, alert.clientName, 'recordatorio')}
+                            className="flex-1 py-3 bg-error text-white font-bold text-sm rounded-xl hover:bg-error/90 transition-all flex items-center justify-center gap-2 shadow-lg shadow-error/20"
+                          >
+                            <Send className="w-4 h-4" />
+                            Enviar Recordatorio
+                          </button>
+                          <button
+                            onClick={() => setShowEmailHistory(alert.id)}
+                            className="py-3 px-3 bg-white border border-outline text-on-surface-variant rounded-xl hover:text-secondary hover:border-secondary transition-all"
+                            title="Ver historial de envíos"
+                          >
+                            <History className="w-4 h-4" />
+                          </button>
+                        </div>
+                        {emailLogs.filter(l => l.invoiceId === alert.id).length > 0 && (
+                          <p className="text-[10px] text-on-surface-variant text-center font-medium">
+                            {emailLogs.filter(l => l.invoiceId === alert.id).length} comunicación(es) enviada(s)
+                          </p>
+                        )}
                         <div className="flex gap-3">
-                          <button 
-                            onClick={() => {
-                              setAlerts(alerts.map(a => a.id === alert.id ? { ...a, status: 'dismissed' } : a));
-                            }}
+                          <button
+                            onClick={() => setAlerts(alerts.map(a => a.id === alert.id ? { ...a, status: 'dismissed' } : a))}
                             className="flex-1 py-2.5 bg-white border border-outline text-on-surface-variant font-bold text-xs rounded-xl hover:bg-surface-container transition-all"
                           >
-                            Desistir (Ignorar)
+                            Ignorar Alerta
                           </button>
-                          <button 
+                          <button
                             onClick={() => {
+                              sendEmail(alert.id, alert.clientName, 'confirmacion');
                               setAlerts(alerts.map(a => a.id === alert.id ? { ...a, status: 'paid' } : a));
                             }}
                             className="flex-1 py-2.5 bg-white border border-success text-success font-bold text-xs rounded-xl hover:bg-success/10 transition-all flex items-center justify-center gap-2"
@@ -819,17 +1081,51 @@ export default function Collections({ clients = [] }: CollectionsProps) {
               <div className="minimal-card bg-white p-6 border border-outline">
                 <div className="flex items-center gap-3 mb-4">
                   <div className="w-10 h-10 bg-primary/10 text-primary rounded-xl flex items-center justify-center">
-                    <Send className="w-5 h-5" />
+                    <Mail className="w-5 h-5" />
                   </div>
                   <h3 className="text-sm font-bold text-primary uppercase tracking-widest">Notificación a Cliente</h3>
                 </div>
-                <p className="text-xs text-on-surface-variant leading-relaxed mb-6">
-                  Una vez generada la boleta, puedes enviar el resumen de diligencias (PDF) y el documento tributario vía Email al contacto del estudio.
+                <p className="text-xs text-on-surface-variant leading-relaxed mb-4">
+                  Envíe la boleta y el resumen de diligencias al correo del estudio jurídico.
                 </p>
-                <button className="w-full py-3 bg-white border border-outline text-primary font-bold text-xs rounded-xl hover:bg-surface-container/50 transition-all flex items-center justify-center gap-2 shadow-sm">
-                  <Send className="w-4 h-4" />
-                  Notificar por correo
-                </button>
+
+                {selectedFirm && (
+                  <div className="p-3 bg-surface-container/30 rounded-xl border border-outline/50 mb-4">
+                    <p className="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest mb-1">Destinatario</p>
+                    <p className="text-sm font-medium text-primary">
+                      {clients.find(c => c.name === selectedFirm)?.email || `Sin correo registrado`}
+                    </p>
+                    {!clients.find(c => c.name === selectedFirm)?.email && (
+                      <p className="text-[10px] text-error mt-1 font-medium">Agregue un email en la ficha del cliente.</p>
+                    )}
+                  </div>
+                )}
+
+                <div className="flex flex-col gap-2">
+                  <button
+                    onClick={() => selectedFirm && sendEmail(`batch-${selectedFirm}`, selectedFirm, 'envio_boleta')}
+                    className="w-full py-3 bg-primary text-white font-bold text-xs rounded-xl hover:bg-primary/90 transition-all flex items-center justify-center gap-2"
+                  >
+                    <Mail className="w-4 h-4" />
+                    Enviar Boleta por Correo
+                  </button>
+                  <button
+                    onClick={() => selectedFirm && sendEmail(`batch-${selectedFirm}`, selectedFirm, 'recordatorio')}
+                    className="w-full py-2.5 bg-white border border-outline text-on-surface-variant font-bold text-xs rounded-xl hover:bg-surface-container/50 transition-all flex items-center justify-center gap-2"
+                  >
+                    <Bell className="w-4 h-4" />
+                    Enviar Recordatorio
+                  </button>
+                  {emailLogs.filter(l => l.invoiceId === `batch-${selectedFirm}`).length > 0 && (
+                    <button
+                      onClick={() => setShowEmailHistory(`batch-${selectedFirm}`)}
+                      className="w-full py-2.5 border border-outline text-on-surface-variant font-bold text-xs rounded-xl hover:bg-surface-container/50 transition-all flex items-center justify-center gap-2"
+                    >
+                      <History className="w-4 h-4" />
+                      Ver Historial ({emailLogs.filter(l => l.invoiceId === `batch-${selectedFirm}`).length})
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
           </div>

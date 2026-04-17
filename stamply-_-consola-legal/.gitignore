@@ -1,0 +1,19 @@
+# Secrets — nunca commitear
+.env
+
+# Base de datos local SQLite
+stamply.db
+stamply.db-shm
+stamply.db-wal
+.env.*
+!.env.example
+
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+
+# OS
+.DS_Store
+Thumbs.db

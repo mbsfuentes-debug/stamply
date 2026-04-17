@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
-import { GoogleGenAI, Type } from "@google/genai";
-import { FileUp, Loader2, CheckCircle2, AlertCircle, Plus, Trash2, Save, ArrowLeft, Edit2 } from 'lucide-react';
+import { FileUp, Loader2, CheckCircle2, AlertCircle, Plus, Trash2, Save, ArrowLeft, Edit2, Search, ExternalLink } from 'lucide-react';
 import { cn, formatRut, validateRut } from '../lib/utils';
 import { Client, Portfolio } from './Clients';
 
@@ -46,21 +45,58 @@ interface SmartIntakeProps {
   clients?: Client[];
   setClients?: (clients: Client[]) => void;
   onSuccess?: (newCase: any) => void;
+  cases?: any[];
+  onGoToCase?: (caseId: string) => void;
 }
 
-export default function SmartIntake({ clients = [], setClients, onSuccess }: SmartIntakeProps) {
-  const [step, setStep] = useState<'upload' | 'edit' | 'success'>('upload');
+export default function SmartIntake({ clients = [], setClients, onSuccess, cases = [], onGoToCase }: SmartIntakeProps) {
+  const [step, setStep] = useState<'rol-check' | 'upload' | 'edit' | 'success'>('rol-check');
   const [isProcessing, setIsProcessing] = useState(false);
   const [formData, setFormData] = useState<CaseData | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [showNewClientModal, setShowNewClientModal] = useState(false);
   const [showNewPortfolioModal, setShowNewPortfolioModal] = useState(false);
-  const [newClientData, setNewClientData] = useState({ 
-    name: '', 
+  const [newClientData, setNewClientData] = useState({
+    name: '',
     type: 'Abogado Independiente' as const,
     paymentTerm: 'inmediato' as const
   });
   const [newPortfolioData, setNewPortfolioData] = useState({ name: '' });
+
+  // Consentimiento IA — persiste en la sesión del tab
+  const [consentGiven, setConsentGiven] = useState<boolean>(
+    () => sessionStorage.getItem('ai_consent_given') === 'true'
+  );
+
+  // Paso 0: ROL check
+  const [rolInput, setRolInput] = useState('');
+  const [rolFound, setRolFound] = useState<any | null>(null);
+  const [rolChecked, setRolChecked] = useState(false);
+
+  const handleRolCheck = () => {
+    if (!rolInput.trim()) return;
+    const found = cases.find(c => c.rol.toLowerCase() === rolInput.trim().toLowerCase());
+    setRolFound(found || null);
+    setRolChecked(true);
+  };
+
+  const handleProceedWithRol = () => {
+    // ROL not found: proceed to upload/manual with ROL pre-filled (locked)
+    setFormData({
+      rolNumber: rolInput.trim(),
+      plaintiffName: '',
+      defendantName: '',
+      court: 'Corte de Apelaciones de Santiago',
+      competencia: 'Civil',
+      cliente: '',
+      cartera: '',
+      numeroInterno: '',
+      caratulaConservador: '',
+      isUrgent: false,
+      defendants: [{ name: '', rut: '', address: '', city: '', legalRep: '' }]
+    });
+    setStep('upload');
+  };
 
   const handleCreateClient = () => {
     if (!newClientData.name) {
@@ -71,7 +107,7 @@ export default function SmartIntake({ clients = [], setClients, onSuccess }: Sma
     const newClient: Client = {
       id: Math.random().toString(36).substr(2, 9),
       name: newClientData.name,
-      rut: '', // Se completa después
+      rut: '',
       type: newClientData.type,
       paymentTerm: newClientData.paymentTerm,
       tariffType: 'Arancel Receptor',
@@ -128,75 +164,60 @@ export default function SmartIntake({ clients = [], setClients, onSuccess }: Sma
 
     try {
       const base64Data = await fileToBase64(file);
-      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
       
-      const response = await ai.models.generateContent({
-        model: "gemini-3-flash-preview",
-        contents: [
-          {
-            inlineData: {
-              data: base64Data,
-              mimeType: file.type || "application/pdf"
-            }
-          },
-          {
-            text: "Extrae la siguiente información legal del documento judicial adjunto. Si algún dato no existe, déjalo vacío. Proporciona un objeto JSON con: rolNumber (ROL CAUSA), plaintiffName (Demandante), defendantName (Demandado principal), court (Tribunal), competencia (Competencia, ej. Corte Suprema, Corte Apelaciones, Civil, Laboral, Penal, Cobranza, Familia). Además, propone una lista 'defendants' (Notificados propuestos) basándote en el demandado, su domicilio y ciudad extraídos del documento, donde cada notificado tenga name (Nombre o Razón social), rut (RUT si aparece, formato 12.345.678-9), address (Domicilio), city (Comuna/Ciudad), y legalRep (Representante legal, solo si existe)."
-          }
-        ],
-        config: {
-          responseMimeType: "application/json",
-          responseSchema: {
-            type: Type.OBJECT,
-            properties: {
-              rolNumber: { type: Type.STRING, description: "Número de ROL de la causa" },
-              plaintiffName: { type: Type.STRING, description: "Nombre del demandante" },
-              defendantName: { type: Type.STRING, description: "Nombre del demandado principal" },
-              court: { type: Type.STRING, description: "Tribunal de la causa" },
-              competencia: { type: Type.STRING, description: "Competencia de la causa" },
-              defendants: {
-                type: Type.ARRAY,
-                description: "Lista de notificados propuestos",
-                items: {
-                  type: Type.OBJECT,
-                  properties: {
-                    name: { type: Type.STRING, description: "Nombre o Razón Social del notificado" },
-                    rut: { type: Type.STRING, description: "RUT del notificado" },
-                    address: { type: Type.STRING, description: "Domicilio del notificado" },
-                    city: { type: Type.STRING, description: "Comuna o Ciudad del notificado" },
-                    legalRep: { type: Type.STRING, description: "Representante legal del notificado (si existe)" }
-                  }
-                }
-              }
-            },
-            required: ["rolNumber", "plaintiffName", "defendantName", "defendants"]
-          }
-        }
+      const response = await fetch('/api/ai/process', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          base64Data,
+          mimeType: file.type || 'application/pdf',
+        }),
       });
 
-      let jsonStr = response.text?.trim() || "{}";
-      if (jsonStr.startsWith('```json')) {
-        jsonStr = jsonStr.replace(/^```json\n?/, '').replace(/\n?```$/, '');
-      } else if (jsonStr.startsWith('```')) {
-        jsonStr = jsonStr.replace(/^```\n?/, '').replace(/\n?```$/, '');
+      if (!response.ok) {
+        let errorMsg = 'Error al procesar el documento con el servidor.';
+        let shouldFallback = false;
+        try {
+          const errorData = await response.json();
+          errorMsg = errorData.error || errorMsg;
+          shouldFallback = errorData.fallback === true;
+        } catch (e) {
+          errorMsg = `Error del servidor (${response.status}): ${response.statusText}`;
+        }
+        if (shouldFallback) {
+          // IA no disponible: ir al formulario manual con ROL pre-llenado
+          setFormData({
+            rolNumber: rolInput.trim(),
+            plaintiffName: '', defendantName: '', court: '', competencia: 'Civil',
+            cliente: '', cartera: '', numeroInterno: '', caratulaConservador: '',
+            defendants: [{ name: '', rut: '', address: '', city: '', legalRep: '' }]
+          });
+          setError(`⚠️ ${errorMsg} Se abrió el formulario manual.`);
+          setStep('edit');
+          return;
+        }
+        throw new Error(errorMsg);
       }
 
-      const data = JSON.parse(jsonStr);
-      
-      setFormData({
-        rolNumber: data.rolNumber || '',
+      const data = await response.json();
+
+      setFormData(prev => ({
+        rolNumber: prev?.rolNumber || rolInput.trim(),
         plaintiffName: data.plaintiffName || '',
         defendantName: data.defendantName || '',
         court: data.court || 'Corte de Apelaciones de Santiago',
         competencia: data.competencia || 'Civil',
-        cliente: '',
-        cartera: '',
-        numeroInterno: '',
-        caratulaConservador: '',
-        defendants: data.defendants && data.defendants.length > 0 
-          ? data.defendants 
+        cliente: prev?.cliente || '',
+        cartera: prev?.cartera || '',
+        numeroInterno: prev?.numeroInterno || '',
+        caratulaConservador: prev?.caratulaConservador || '',
+        defendants: data.defendants && data.defendants.length > 0
+          ? data.defendants
           : [{ name: data.defendantName || '', rut: '', address: '', city: '', legalRep: '' }]
-      });
-      
+      }));
+
       setStep('edit');
     } catch (err: any) {
       console.error("Error generating content:", err);
@@ -224,33 +245,161 @@ export default function SmartIntake({ clients = [], setClients, onSuccess }: Sma
   const handleDefendantChange = (index: number, field: keyof Defendant, value: string) => {
     if (!formData) return;
     const newDefendants = [...formData.defendants];
-    
+
     if (field === 'rut') {
       newDefendants[index][field] = formatRut(value);
     } else {
       newDefendants[index][field] = value;
     }
-    
+
     setFormData({ ...formData, defendants: newDefendants });
   };
 
   const handleManualEntry = () => {
-    setFormData({
-      rolNumber: '',
-      plaintiffName: '',
-      defendantName: '',
-      court: 'Corte de Apelaciones de Santiago',
-      competencia: 'Civil',
-      cliente: '',
-      cartera: '',
-      numeroInterno: '',
-      caratulaConservador: '',
+    setFormData(prev => ({
+      rolNumber: prev?.rolNumber || rolInput.trim(),
+      plaintiffName: prev?.plaintiffName || '',
+      defendantName: prev?.defendantName || '',
+      court: prev?.court || 'Corte de Apelaciones de Santiago',
+      competencia: prev?.competencia || 'Civil',
+      cliente: prev?.cliente || '',
+      cartera: prev?.cartera || '',
+      numeroInterno: prev?.numeroInterno || '',
+      caratulaConservador: prev?.caratulaConservador || '',
       isUrgent: false,
-      defendants: [{ name: '', rut: '', address: '', city: '', legalRep: '' }]
-    });
+      defendants: prev?.defendants || [{ name: '', rut: '', address: '', city: '', legalRep: '' }]
+    }));
     setStep('edit');
   };
 
+  // ─── PASO 0: Verificación de ROL ──────────────────────────────────────────
+  if (step === 'rol-check') {
+    return (
+      <div className="minimal-card p-8 md:p-12 max-w-2xl mx-auto bg-white animate-in fade-in slide-in-from-bottom-4 duration-500">
+        <div className="text-center mb-10">
+          <div className="w-16 h-16 bg-primary/5 rounded-2xl flex items-center justify-center mx-auto mb-5 border border-primary/10">
+            <Search className="w-8 h-8 text-primary" />
+          </div>
+          <h3 className="text-2xl font-bold text-primary tracking-tight">Ingreso de Causa</h3>
+          <p className="text-on-surface-variant mt-2 text-sm font-medium">
+            Ingrese el ROL para verificar si la causa ya existe en el sistema.
+          </p>
+        </div>
+
+        <div className="space-y-4">
+          <div>
+            <label className="text-xs font-bold text-on-surface-variant uppercase tracking-widest mb-2 block">
+              ROL de la Causa
+            </label>
+            <div className="flex gap-3">
+              <input
+                type="text"
+                value={rolInput}
+                onChange={e => { setRolInput(e.target.value); setRolChecked(false); setRolFound(null); }}
+                onKeyDown={e => e.key === 'Enter' && handleRolCheck()}
+                placeholder="Ej: C-1452-2023"
+                className="flex-1 border border-outline bg-transparent p-3 text-sm focus:border-primary outline-none transition-all rounded-xl font-mono tracking-wider"
+                autoFocus
+              />
+              <button
+                onClick={handleRolCheck}
+                disabled={!rolInput.trim()}
+                className="px-5 py-3 bg-primary text-white font-bold text-sm rounded-xl hover:bg-primary/90 transition-all disabled:opacity-40 flex items-center gap-2 shrink-0"
+              >
+                <Search className="w-4 h-4" />
+                Buscar
+              </button>
+            </div>
+          </div>
+
+          {/* Resultado de la búsqueda */}
+          {rolChecked && (
+            <div className="animate-in fade-in slide-in-from-top-2 duration-300">
+              {rolFound ? (
+                // CAUSA ENCONTRADA
+                <div className="p-5 bg-secondary/5 border border-secondary/30 rounded-2xl">
+                  <div className="flex items-start gap-3 mb-4">
+                    <div className="w-9 h-9 bg-secondary/10 rounded-xl flex items-center justify-center shrink-0">
+                      <CheckCircle2 className="w-5 h-5 text-secondary" />
+                    </div>
+                    <div>
+                      <p className="text-sm font-bold text-secondary">Causa encontrada en el sistema</p>
+                      <p className="text-xs text-on-surface-variant mt-0.5">Esta causa ya fue ingresada. Puede ir directamente a ella.</p>
+                    </div>
+                  </div>
+
+                  <div className="bg-white rounded-xl border border-outline p-4 space-y-2 mb-5">
+                    <div className="flex justify-between items-center">
+                      <span className="text-xs font-bold text-on-surface-variant uppercase tracking-widest">ROL</span>
+                      <span className="text-sm font-bold text-primary font-mono">{rolFound.rol}</span>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-xs font-bold text-on-surface-variant uppercase tracking-widest">Demandado</span>
+                      <span className="text-sm font-medium text-on-surface text-right max-w-[60%]">{rolFound.demandado}</span>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-xs font-bold text-on-surface-variant uppercase tracking-widest">Cliente</span>
+                      <span className="text-sm font-medium text-on-surface text-right max-w-[60%]">{rolFound.cliente || '—'}</span>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-xs font-bold text-on-surface-variant uppercase tracking-widest">Tribunal</span>
+                      <span className="text-sm font-medium text-on-surface text-right max-w-[60%]">{rolFound.competencia}</span>
+                    </div>
+                    {rolFound.urgente && (
+                      <div className="flex items-center gap-1.5 pt-1">
+                        <AlertCircle className="w-4 h-4 text-error" />
+                        <span className="text-xs font-bold text-error uppercase tracking-widest">Causa Urgente</span>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="flex flex-col sm:flex-row gap-3">
+                    <button
+                      onClick={() => onGoToCase?.(rolFound.id)}
+                      className="flex-1 py-3 bg-secondary text-white font-bold text-sm rounded-xl hover:bg-secondary/90 transition-all flex items-center justify-center gap-2"
+                    >
+                      <ExternalLink className="w-4 h-4" />
+                      Ir a la Causa
+                    </button>
+                    <button
+                      onClick={() => { setRolInput(''); setRolChecked(false); setRolFound(null); }}
+                      className="flex-1 sm:flex-none px-4 py-3 border border-outline text-on-surface-variant font-bold text-sm rounded-xl hover:bg-surface-container transition-all text-center"
+                    >
+                      Buscar Otro ROL
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                // CAUSA NO ENCONTRADA
+                <div className="p-5 bg-primary/5 border border-primary/20 rounded-2xl">
+                  <div className="flex items-start gap-3 mb-4">
+                    <div className="w-9 h-9 bg-primary/10 rounded-xl flex items-center justify-center shrink-0">
+                      <Plus className="w-5 h-5 text-primary" />
+                    </div>
+                    <div>
+                      <p className="text-sm font-bold text-primary">ROL disponible — Causa nueva</p>
+                      <p className="text-xs text-on-surface-variant mt-0.5">
+                        El ROL <span className="font-mono font-bold">{rolInput.trim()}</span> no existe. Puede continuar con el ingreso.
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={handleProceedWithRol}
+                    className="w-full py-3 bg-primary text-white font-bold text-sm rounded-xl hover:bg-primary/90 transition-all flex items-center justify-center gap-2"
+                  >
+                    Continuar con Ingreso
+                    <ArrowLeft className="w-4 h-4 rotate-180" />
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  // ─── SUCCESS ─────────────────────────────────────────────────────────────
   if (step === 'success') {
     return (
       <div className="minimal-card p-12 max-w-2xl mx-auto text-center animate-in fade-in zoom-in duration-500 bg-white">
@@ -259,12 +408,12 @@ export default function SmartIntake({ clients = [], setClients, onSuccess }: Sma
         </div>
         <h3 className="text-2xl font-bold text-primary tracking-tight mb-2">Causa Guardada</h3>
         <p className="text-on-surface-variant text-sm font-medium mb-8">La causa ha sido ingresada exitosamente al sistema.</p>
-        
+
         <div className="flex flex-col sm:flex-row gap-4 justify-center">
           <button onClick={() => setStep('edit')} className="px-6 py-3 border border-outline text-on-surface-variant font-bold text-sm rounded-xl hover:bg-surface-container transition-all">
             Editar Datos
           </button>
-          <button onClick={() => { setStep('upload'); setFormData(null); }} className="px-6 py-3 bg-primary text-white font-bold text-sm rounded-xl hover:bg-primary/90 transition-all">
+          <button onClick={() => { setStep('rol-check'); setFormData(null); setRolInput(''); setRolChecked(false); setRolFound(null); }} className="px-6 py-3 bg-primary text-white font-bold text-sm rounded-xl hover:bg-primary/90 transition-all">
             Ingresar Nueva Causa
           </button>
         </div>
@@ -272,6 +421,111 @@ export default function SmartIntake({ clients = [], setClients, onSuccess }: Sma
     );
   }
 
+  // ─── PASO 1: Upload / Selección de método ────────────────────────────────
+  if (step === 'upload') {
+    return (
+      <div className="minimal-card p-8 md:p-12 max-w-3xl mx-auto bg-white animate-in fade-in slide-in-from-bottom-4 duration-500">
+        <div className="flex items-center gap-3 mb-8">
+          <button onClick={() => setStep('rol-check')} className="p-2 text-on-surface-variant hover:bg-surface-container rounded-xl transition-colors">
+            <ArrowLeft className="w-5 h-5" />
+          </button>
+          <div>
+            <h3 className="text-2xl font-bold text-primary tracking-tight">Ingresar Causa</h3>
+            <div className="flex items-center gap-2 mt-1">
+              <span className="text-xs font-bold text-on-surface-variant uppercase tracking-widest">ROL:</span>
+              <span className="text-sm font-mono font-bold text-secondary bg-secondary/10 px-2 py-0.5 rounded-lg">{formData?.rolNumber || rolInput}</span>
+              <span className="text-[10px] text-on-surface-variant font-medium">(bloqueado)</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Banner de consentimiento IA — visible solo si no fue aceptado en esta sesión */}
+        {!consentGiven && (
+          <div className="mb-6 p-4 bg-amber-50 border border-amber-200 rounded-2xl space-y-3">
+            <p className="text-sm font-bold text-amber-800 flex items-center gap-2">
+              <AlertCircle className="w-4 h-4 flex-shrink-0" />
+              Procesamiento de datos por IA
+            </p>
+            <p className="text-xs text-amber-700 leading-relaxed">
+              Al subir un PDF, el documento será enviado a <strong>Google Gemini AI</strong> para
+              extraer automáticamente los datos de la causa (partes, tribunal, domicilios).
+              Los datos se procesan según la política de privacidad de Google.
+            </p>
+            <label className="flex items-start gap-3 cursor-pointer">
+              <input
+                type="checkbox"
+                className="mt-0.5 w-4 h-4 accent-amber-600"
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
+                  if (e.target.checked) {
+                    sessionStorage.setItem('ai_consent_given', 'true');
+                    setConsentGiven(true);
+                  }
+                }}
+              />
+              <span className="text-xs text-amber-800 font-medium">
+                Entiendo que el documento será procesado por Google Gemini AI para extraer datos.
+              </span>
+            </label>
+          </div>
+        )}
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className={cn("relative group", !consentGiven && "opacity-50 pointer-events-none")}>
+            <input
+              type="file"
+              accept=".pdf"
+              onChange={handleFileUpload}
+              disabled={isProcessing || !consentGiven}
+              className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+            />
+            <div className={cn(
+              "border-2 border-dashed rounded-2xl p-8 flex flex-col items-center justify-center transition-all h-full min-h-[240px]",
+              isProcessing ? "bg-surface-container border-primary" : "bg-surface-container/30 border-outline group-hover:border-primary group-hover:bg-primary/5"
+            )}>
+              {isProcessing ? (
+                <>
+                  <Loader2 className="w-10 h-10 text-primary animate-spin mb-4" />
+                  <p className="text-sm font-bold text-primary">Procesando Documento...</p>
+                  <p className="text-xs font-medium text-on-surface-variant mt-2 text-center">Google AI leyendo el archivo PDF</p>
+                </>
+              ) : (
+                <>
+                  <div className="w-16 h-16 bg-white rounded-2xl flex items-center justify-center mb-4 shadow-sm group-hover:scale-110 transition-transform">
+                    <FileUp className="w-8 h-8 text-primary" />
+                  </div>
+                  <p className="text-sm font-bold text-primary">Subir PDF Judicial</p>
+                  <p className="text-xs font-medium text-on-surface-variant mt-2 text-center">
+                    {consentGiven ? 'Extracción automática con IA' : 'Acepta el consentimiento para habilitar'}
+                  </p>
+                </>
+              )}
+            </div>
+          </div>
+
+          <button
+            onClick={handleManualEntry}
+            disabled={isProcessing}
+            className="border-2 border-outline rounded-2xl p-8 flex flex-col items-center justify-center transition-all h-full min-h-[240px] bg-white hover:border-secondary hover:bg-secondary/5 group"
+          >
+            <div className="w-16 h-16 bg-surface-container rounded-2xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
+              <Edit2 className="w-8 h-8 text-secondary" />
+            </div>
+            <p className="text-sm font-bold text-secondary">Ingreso Manual</p>
+            <p className="text-xs font-medium text-on-surface-variant mt-2 text-center">Completar formulario desde cero</p>
+          </button>
+        </div>
+
+        {error && (
+          <div className="mt-8 p-4 bg-error/10 text-error rounded-xl flex items-center border border-error/20">
+            <AlertCircle className="w-5 h-5 mr-3 flex-shrink-0" />
+            <p className="text-sm font-bold">{error}</p>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // ─── PASO 2: Formulario de edición ───────────────────────────────────────
   if (step === 'edit' && formData) {
     return (
       <div className="minimal-card p-8 md:p-12 max-w-4xl mx-auto animate-in fade-in slide-in-from-bottom-4 duration-500 bg-white">
@@ -285,8 +539,15 @@ export default function SmartIntake({ clients = [], setClients, onSuccess }: Sma
           </button>
         </div>
 
+        {error && (
+          <div className="mb-6 p-4 bg-warning/10 text-warning rounded-xl flex items-start gap-3 border border-warning/20">
+            <AlertCircle className="w-5 h-5 shrink-0 mt-0.5" />
+            <p className="text-sm font-bold">{error}</p>
+          </div>
+        )}
+
         <div className="space-y-10">
-          {/* Datos Extraídos */}
+          {/* Datos Generales */}
           <section>
             <h4 className="text-sm font-bold text-primary uppercase tracking-widest mb-4 flex items-center">
               <CheckCircle2 className="w-4 h-4 mr-2"/> Datos Generales
@@ -294,7 +555,15 @@ export default function SmartIntake({ clients = [], setClients, onSuccess }: Sma
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <label className="text-xs font-bold text-on-surface-variant uppercase tracking-widest mb-2 block">ROL Causa</label>
-                <input type="text" value={formData.rolNumber} onChange={e => setFormData({...formData, rolNumber: e.target.value})} className="w-full border border-outline bg-transparent p-3 text-sm focus:border-primary outline-none transition-all rounded-xl" />
+                <div className="relative">
+                  <input
+                    type="text"
+                    value={formData.rolNumber}
+                    readOnly
+                    className="w-full border border-outline/50 bg-surface-container/30 p-3 text-sm rounded-xl font-mono font-bold text-primary cursor-not-allowed pr-20"
+                  />
+                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] font-bold text-on-surface-variant bg-surface-container px-2 py-0.5 rounded-lg">BLOQUEADO</span>
+                </div>
               </div>
               <div>
                 <label className="text-xs font-bold text-on-surface-variant uppercase tracking-widest mb-2 block">Tribunal</label>
@@ -376,7 +645,7 @@ export default function SmartIntake({ clients = [], setClients, onSuccess }: Sma
                 <Plus className="w-4 h-4 mr-1" /> Agregar Notificado
               </button>
             </div>
-            
+
             <div className="space-y-4">
               {formData.defendants.map((def, idx) => (
                 <div key={idx} className="p-6 border border-outline rounded-2xl bg-surface-container/30 relative group">
@@ -393,16 +662,16 @@ export default function SmartIntake({ clients = [], setClients, onSuccess }: Sma
                     </div>
                     <div>
                       <label className="text-xs font-bold text-on-surface-variant uppercase tracking-widest mb-2 block">RUT</label>
-                      <input 
-                        type="text" 
-                        value={def.rut} 
-                        onChange={e => handleDefendantChange(idx, 'rut', e.target.value)} 
+                      <input
+                        type="text"
+                        value={def.rut}
+                        onChange={e => handleDefendantChange(idx, 'rut', e.target.value)}
                         className={cn(
                           "w-full border bg-white p-3 text-sm outline-none transition-all rounded-xl",
-                          def.rut && validateRut(def.rut).isComplete 
-                            ? (validateRut(def.rut).isValid ? "border-success text-success focus:border-success" : "border-error text-error focus:border-error") 
+                          def.rut && validateRut(def.rut).isComplete
+                            ? (validateRut(def.rut).isValid ? "border-success text-success focus:border-success" : "border-error text-error focus:border-error")
                             : "border-outline focus:border-primary"
-                        )} 
+                        )}
                         placeholder="Ej. 19.176.464-1"
                       />
                       {def.rut && validateRut(def.rut).isComplete && (
@@ -438,8 +707,8 @@ export default function SmartIntake({ clients = [], setClients, onSuccess }: Sma
               onClick={() => setFormData({...formData, isUrgent: !formData.isUrgent})}
               className={cn(
                 "flex items-center justify-between px-3 py-2 rounded-xl border transition-all duration-300 w-full sm:w-auto min-w-[200px]",
-                formData.isUrgent 
-                  ? "bg-error/10 border-error text-error shadow-sm shadow-error/10" 
+                formData.isUrgent
+                  ? "bg-error/10 border-error text-error shadow-sm shadow-error/10"
                   : "bg-surface-container/20 border-outline text-on-surface-variant hover:border-error/50"
               )}
             >
@@ -463,7 +732,7 @@ export default function SmartIntake({ clients = [], setClients, onSuccess }: Sma
               </div>
             </button>
 
-            <button onClick={() => { 
+            <button onClick={() => {
               const newCase = {
                 id: Math.random().toString(36).substr(2, 9),
                 rol: formData.rolNumber,
@@ -488,8 +757,8 @@ export default function SmartIntake({ clients = [], setClients, onSuccess }: Sma
                 urgente: formData.isUrgent || false,
                 observations: ''
               };
-              setStep('success'); 
-              onSuccess?.(newCase); 
+              setStep('success');
+              onSuccess?.(newCase);
             }} className="w-full sm:w-auto px-8 py-3 bg-primary text-white font-bold text-sm rounded-xl hover:bg-primary/90 transition-all flex items-center justify-center">
               <Save className="w-4 h-4 mr-2" /> Guardar Causa
             </button>
@@ -509,8 +778,8 @@ export default function SmartIntake({ clients = [], setClients, onSuccess }: Sma
               <div className="space-y-4">
                 <div>
                   <label className="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant mb-1 block">Nombre o Razón Social</label>
-                  <input 
-                    type="text" 
+                  <input
+                    type="text"
                     value={newClientData.name}
                     onChange={e => setNewClientData({...newClientData, name: e.target.value})}
                     className="w-full p-3 bg-surface-container/30 border border-outline text-sm focus:border-primary outline-none transition-all rounded-xl"
@@ -520,7 +789,7 @@ export default function SmartIntake({ clients = [], setClients, onSuccess }: Sma
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <label className="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant mb-1 block">Tipo de Cliente</label>
-                    <select 
+                    <select
                       value={newClientData.type}
                       onChange={e => setNewClientData({...newClientData, type: e.target.value as any})}
                       className="w-full p-3 bg-surface-container/30 border border-outline text-sm focus:border-primary outline-none transition-all rounded-xl"
@@ -531,7 +800,7 @@ export default function SmartIntake({ clients = [], setClients, onSuccess }: Sma
                   </div>
                   <div>
                     <label className="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant mb-1 block">Forma de Pago</label>
-                    <select 
+                    <select
                       value={newClientData.paymentTerm}
                       onChange={e => setNewClientData({...newClientData, paymentTerm: e.target.value as any})}
                       className="w-full p-3 bg-surface-container/30 border border-outline text-sm focus:border-primary outline-none transition-all rounded-xl"
@@ -551,7 +820,7 @@ export default function SmartIntake({ clients = [], setClients, onSuccess }: Sma
                   </p>
                 </div>
 
-                <button 
+                <button
                   onClick={handleCreateClient}
                   className="w-full py-3 bg-primary text-white font-bold rounded-xl hover:bg-primary/90 transition-all mt-4"
                 >
@@ -576,8 +845,8 @@ export default function SmartIntake({ clients = [], setClients, onSuccess }: Sma
               <div className="space-y-4">
                 <div>
                   <label className="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant mb-1 block">Nombre Institución</label>
-                  <input 
-                    type="text" 
+                  <input
+                    type="text"
                     value={newPortfolioData.name}
                     onChange={e => setNewPortfolioData({...newPortfolioData, name: e.target.value})}
                     className="w-full p-3 bg-surface-container/30 border border-outline text-sm focus:border-primary outline-none transition-all rounded-xl"
@@ -592,7 +861,7 @@ export default function SmartIntake({ clients = [], setClients, onSuccess }: Sma
                   </p>
                 </div>
 
-                <button 
+                <button
                   onClick={handleCreatePortfolio}
                   className="w-full py-3 bg-primary text-white font-bold rounded-xl hover:bg-primary/90 transition-all mt-4"
                 >
@@ -606,63 +875,5 @@ export default function SmartIntake({ clients = [], setClients, onSuccess }: Sma
     );
   }
 
-  return (
-    <div className="minimal-card p-12 max-w-3xl mx-auto bg-white">
-      <div className="text-center mb-12">
-        <h3 className="text-2xl font-bold text-primary tracking-tight">Ingreso de Causa</h3>
-        <p className="text-on-surface-variant mt-3 text-sm font-medium">Suba un PDF judicial para extraer detalles automáticamente o ingrese los datos manualmente.</p>
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <div className="relative group">
-          <input
-            type="file"
-            accept=".pdf"
-            onChange={handleFileUpload}
-            disabled={isProcessing}
-            className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
-          />
-          <div className={cn(
-            "border-2 border-dashed rounded-2xl p-8 flex flex-col items-center justify-center transition-all h-full min-h-[240px]",
-            isProcessing ? "bg-surface-container border-primary" : "bg-surface-container/30 border-outline group-hover:border-primary group-hover:bg-primary/5"
-          )}>
-            {isProcessing ? (
-              <>
-                <Loader2 className="w-10 h-10 text-primary animate-spin mb-4" />
-                <p className="text-sm font-bold text-primary">Procesando Documento...</p>
-                <p className="text-xs font-medium text-on-surface-variant mt-2 text-center">Google AI leyendo el archivo PDF</p>
-              </>
-            ) : (
-              <>
-                <div className="w-16 h-16 bg-white rounded-2xl flex items-center justify-center mb-4 shadow-sm group-hover:scale-110 transition-transform">
-                  <FileUp className="w-8 h-8 text-primary" />
-                </div>
-                <p className="text-sm font-bold text-primary">Subir PDF Judicial</p>
-                <p className="text-xs font-medium text-on-surface-variant mt-2 text-center">Extracción automática con IA</p>
-              </>
-            )}
-          </div>
-        </div>
-
-        <button
-          onClick={handleManualEntry}
-          disabled={isProcessing}
-          className="border-2 border-outline rounded-2xl p-8 flex flex-col items-center justify-center transition-all h-full min-h-[240px] bg-white hover:border-secondary hover:bg-secondary/5 group"
-        >
-          <div className="w-16 h-16 bg-surface-container rounded-2xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
-            <Edit2 className="w-8 h-8 text-secondary" />
-          </div>
-          <p className="text-sm font-bold text-secondary">Ingreso Manual</p>
-          <p className="text-xs font-medium text-on-surface-variant mt-2 text-center">Completar formulario desde cero</p>
-        </button>
-      </div>
-
-      {error && (
-        <div className="mt-8 p-4 bg-error/10 text-error rounded-xl flex items-center border border-error/20">
-          <AlertCircle className="w-5 h-5 mr-3 flex-shrink-0" />
-          <p className="text-sm font-bold">{error}</p>
-        </div>
-      )}
-    </div>
-  );
+  return null;
 }

@@ -1,22 +1,24 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Sidebar from './components/Sidebar';
 import Dashboard from './components/Dashboard';
 import SmartIntake from './components/SmartIntake';
 import SmartRoute from './components/SmartRoute';
-import CasesList, { INITIAL_CASES } from './components/CasesList';
+import CasesList from './components/CasesList';
 import Documents from './components/Documents';
 import SignatureCenter from './components/SignatureCenter';
 import Settings from './components/Settings';
 import Profile from './components/Profile';
-import Clients, { Client, INITIAL_CLIENTS } from './components/Clients';
+import Clients, { Client } from './components/Clients';
 import SmartEstampe from './components/SmartEstampe';
+import Tramites from './components/Tramites';
 import TemplateLibrary, { Template } from './components/TemplateLibrary';
 import Collections from './components/Collections';
-import { 
-  ClipboardList, 
-  Map as MapIcon, 
+import { Tramite } from './types';
+import {
+  ClipboardList,
+  Map as MapIcon,
   LayoutDashboard,
-  CheckSquare, 
+  CheckSquare,
   UserCircle,
   Plus,
   FileText,
@@ -27,93 +29,80 @@ import {
 import { cn } from './lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
 
-// Global Mock Data
-const INITIAL_DOCS = [
-  { id: '1', name: 'Demanda_Principal.pdf', type: 'Demanda', rol: 'C-1452-2023', date: '2023-10-24', size: '2.4 MB' },
-  { id: '2', name: 'Resolucion_Busqueda.pdf', type: 'Resolución', rol: 'C-892-2024', date: '2024-01-16', size: '1.1 MB' },
-  { id: '3', name: 'Estampe_Notificacion.pdf', type: 'Estampe', rol: 'C-331-2024', date: '2024-02-03', size: '850 KB' },
-  { id: '4', name: 'Boleta_Honorarios_145.pdf', type: 'Boleta', rol: 'C-1452-2023', date: '2023-10-25', size: '120 KB' },
-  { id: '5', name: 'Certificado_Rebeldia.pdf', type: 'Certificado', rol: 'C-892-2024', date: '2024-02-10', size: '450 KB' }
-];
-
-const INITIAL_ESTAMPES = [
-  {
-    id: '1',
-    rol: 'C-1452-2023',
-    defendant: 'INVERSIONES Y ASESORIAS LIMITADA',
-    type: 'Notificación Personal',
-    status: 'borrador',
-    date: '2023-10-24',
-    content: 'En Santiago, a 24 de Octubre de 2023, siendo las 10:00 horas, me constituí en el domicilio ubicado en Av. Providencia 1234, comuna de Providencia, con el objeto de notificar la demanda a INVERSIONES Y ASESORIAS LIMITADA. Fui atendido por don Carlos Silva, quien se identificó como representante legal...'
-  },
-  {
-    id: '2',
-    rol: 'C-892-2024',
-    defendant: 'JUAN PÉREZ GONZÁLEZ',
-    type: 'Búsqueda',
-    status: 'listo',
-    date: '2024-01-15',
-    content: 'En Santiago, a 15 de Enero de 2024, siendo las 15:30 horas, me constituí en el domicilio ubicado en Calle Falsa 123, comuna de Santiago, procediendo a realizar la búsqueda de don JUAN PÉREZ GONZÁLEZ, no siendo habido en el lugar...'
-  },
-  {
-    id: '3',
-    rol: 'C-331-2024',
-    defendant: 'COMERCIALIZADORA DEL SUR SPA',
-    type: 'Requerimiento de Pago',
-    status: 'firmado',
-    date: '2024-02-02',
-    content: 'En Santiago, a 02 de Febrero de 2024, requerí de pago a COMERCIALIZADORA DEL SUR SPA, por la suma de $55.000, no efectuando el pago en el acto...'
-  }
-];
-
-const INITIAL_TEMPLATES: Template[] = [
-  {
-    id: '1',
-    name: 'Notificación Personal',
-    description: 'Modelo estándar para notificación personal del artículo 40 del CPC.',
-    content: 'En Santiago, a [FECHA], siendo las [HORA] horas, me constituí en el domicilio ubicado en [DIRECCION], comuna de [COMUNA], con el objeto de notificar la demanda a [DEMANDADO] en la causa Rol [ROL] del [TRIBUNAL].\n\nFui atendido por quien dijo ser el demandado, a quien entregué copias íntegras de la demanda y resolución recaída en ella.\n\nDerechos pagados: $[ARANCEL].-\n\n[RECEPTOR]\nReceptor Judicial'
-  },
-  {
-    id: '2',
-    name: 'Búsqueda Art. 44',
-    description: 'Certificación de búsquedas positivas para posterior notificación por el artículo 44.',
-    content: 'En Santiago, a [FECHA], siendo las [HORA] horas, me constituí en el domicilio ubicado en [DIRECCION], comuna de [COMUNA], procediendo a realizar la búsqueda de [DEMANDADO] en la causa Rol [ROL] del [TRIBUNAL].\n\nNo habiendo sido habido en el lugar, me cercioré de que este es su morada o lugar donde ejerce su industria, profesión o empleo, por haber conversado con un adulto que se encontraba en el lugar.\n\nDerechos pagados: $[ARANCEL].-\n\n[RECEPTOR]\nReceptor Judicial'
-  },
-  {
-    id: '3',
-    name: 'Requerimiento de Pago',
-    description: 'Acta de requerimiento de pago en juicios ejecutivos.',
-    content: 'En Santiago, a [FECHA], siendo las [HORA] horas, requerí de pago a [DEMANDADO], en la causa Rol [ROL] del [TRIBUNAL], por la suma adeudada.\n\nEl ejecutado no efectuó el pago en el acto, por lo que se procedió a trabar embargo sobre los bienes suficientes para cubrir la deuda.\n\nDerechos pagados: $[ARANCEL].-\n\n[RECEPTOR]\nReceptor Judicial'
-  }
-];
-
 export default function App() {
   const [activeTab, setActiveTab] = useState('dashboard');
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
-  
-  // Lifted State
-  const [documents, setDocuments] = useState(INITIAL_DOCS);
-  const [estampes, setEstampes] = useState(INITIAL_ESTAMPES);
-  const [templates, setTemplates] = useState<Template[]>(INITIAL_TEMPLATES);
-  const [clients, setClients] = useState<Client[]>(INITIAL_CLIENTS);
-  const [cases, setCases] = useState(INITIAL_CASES);
+
+  // State — loaded from SQLite via API
+  const [documents, setDocuments] = useState<any[]>([]);
+  const [estampes, setEstampes] = useState<any[]>([]);
+  const [templates, setTemplates] = useState<Template[]>([]);
+  const [clients, setClients] = useState<Client[]>([]);
+  const [cases, setCases] = useState<any[]>([]);
+  const [tramites, setTramites] = useState<Tramite[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    Promise.all([
+      fetch('/api/clients').then(r => r.json()),
+      fetch('/api/cases').then(r => r.json()),
+      fetch('/api/tramites').then(r => r.json()),
+      fetch('/api/documents').then(r => r.json()),
+      fetch('/api/estampes').then(r => r.json()),
+      fetch('/api/templates').then(r => r.json()),
+    ]).then(([cls, cs, trs, docs, ests, tpls]) => {
+      setClients(cls);
+      setCases(cs);
+      setTramites(trs);
+      setDocuments(docs);
+      setEstampes(ests);
+      setTemplates(tpls);
+    }).catch(err => {
+      console.error('[App] Error cargando datos:', err);
+    }).finally(() => setLoading(false));
+  }, []);
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="text-center">
+          <div className="w-10 h-10 border-2 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+          <p className="text-on-surface-variant text-xs uppercase tracking-widest">Cargando datos...</p>
+        </div>
+      </div>
+    );
+  }
 
   const renderContent = () => {
     switch (activeTab) {
       case 'dashboard':
         return <Dashboard setActiveTab={setActiveTab} documents={documents} />;
       case 'new-case':
-        return <SmartIntake 
+        return <SmartIntake
           clients={clients}
           setClients={setClients}
-          onSuccess={(newCase) => {
-          if (newCase) {
-            setCases([newCase, ...cases]);
-          }
-          setActiveTab('cases');
-        }} />;
+          cases={cases}
+          onGoToCase={(caseId) => setActiveTab('cases')}
+          onSuccess={async (newCase) => {
+            if (newCase) {
+              try {
+                const saved = await fetch('/api/cases', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify(newCase),
+                }).then(r => r.json());
+                setCases([saved, ...cases]);
+              } catch {
+                setCases([newCase, ...cases]);
+              }
+            }
+            setActiveTab('cases');
+          }}
+        />;
+      case 'tramites':
+        return <Tramites tramites={tramites} setTramites={setTramites} cases={cases} />;
       case 'cases':
-        return <CasesList cases={cases} setCases={setCases} setActiveTab={setActiveTab} clients={clients} setClients={setClients} />;
+        return <CasesList cases={cases} setCases={setCases} setActiveTab={setActiveTab} clients={clients} setClients={setClients} tramites={tramites} setTramites={setTramites} />;
       case 'documents':
         return <Documents documents={documents} setDocuments={setDocuments} />;
       case 'signatures':
@@ -124,20 +113,29 @@ export default function App() {
           setDocuments={setDocuments} 
         />;
       case 'smart-estampe':
-        return <SmartEstampe 
+        return <SmartEstampe
           templates={templates}
           clients={clients}
-          onSendToAuthorize={(newEstampe) => {
-            setEstampes([newEstampe, ...estampes]);
+          onSendToAuthorize={async (newEstampe) => {
+            try {
+              const saved = await fetch('/api/estampes', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(newEstampe),
+              }).then(r => r.json());
+              setEstampes([saved, ...estampes]);
+            } catch {
+              setEstampes([newEstampe, ...estampes]);
+            }
             setActiveTab('signatures');
-          }} 
+          }}
         />;
       case 'template-library':
         return <TemplateLibrary templates={templates} setTemplates={setTemplates} />;
       case 'clients':
         return <Clients templates={templates} clients={clients} setClients={setClients} />;
       case 'collections':
-        return <Collections clients={clients} />;
+        return <Collections clients={clients} tramites={tramites} setTramites={setTramites} />;
       case 'map':
         return <SmartRoute cases={cases} clients={clients} />;
       case 'settings':
