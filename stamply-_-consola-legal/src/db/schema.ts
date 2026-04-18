@@ -145,4 +145,16 @@ CREATE TABLE IF NOT EXISTS templates (
   is_system    INTEGER NOT NULL DEFAULT 1,
   created_at   TEXT NOT NULL DEFAULT (datetime('now'))
 );
+
+-- ─── Auditoría de llamadas a IA ───────────────────────────────────────────────
+-- Registra metadata de cada llamada (nunca almacena PII ni contenido del doc)
+CREATE TABLE IF NOT EXISTS ai_audit_log (
+  id              TEXT PRIMARY KEY,
+  timestamp       TEXT NOT NULL DEFAULT (datetime('now')),
+  doc_hash        TEXT NOT NULL,   -- SHA-256 del PDF (no el contenido)
+  tokens_sent     INTEGER NOT NULL DEFAULT 0,
+  schema_returned TEXT NOT NULL DEFAULT '',
+  ip              TEXT NOT NULL DEFAULT '',
+  cached          INTEGER NOT NULL DEFAULT 0  -- 1 si se sirvió desde caché
+);
 `;

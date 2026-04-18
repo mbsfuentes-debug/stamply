@@ -5,22 +5,18 @@ import { cn } from '../lib/utils';
 import { Template } from './TemplateLibrary';
 import { Client } from './Clients';
 
-// Mock data for cases that need estampes
-const CASES_FOR_ESTAMPE = [
-  { id: '1', rol: 'C-1452-2023', defendant: 'INVERSIONES Y ASESORIAS LIMITADA', cliente: 'BANCO SANTANDER CHILE', cartera: 'Hipotecario', tribunal: '1° Juzgado Civil de Santiago', address: 'Av. Providencia 1234', city: 'Providencia' },
-  { id: '2', rol: 'C-892-2024', defendant: 'JUAN PÉREZ GONZÁLEZ', cliente: 'SCOTIABANK CHILE', cartera: 'Consumo', tribunal: '15° Juzgado Civil de Santiago', address: 'Calle Falsa 123', city: 'Santiago' },
-  { id: '3', rol: 'C-331-2024', defendant: 'COMERCIALIZADORA DEL SUR SPA', cliente: 'BANCO DE CHILE', cartera: 'Pyme', tribunal: '5° Juzgado Civil de Santiago', address: 'Av. Apoquindo 4501', city: 'Las Condes' }
-];
+// Mock data removed — using real cases from props
 
 type EntityType = 'MALE' | 'FEMALE' | 'CORP' | 'PLURAL';
 
 interface SmartEstampeProps {
   templates: Template[];
   clients: Client[];
+  cases: any[];
   onSendToAuthorize: (estampe: any) => void;
 }
 
-export default function SmartEstampe({ templates, clients, onSendToAuthorize }: SmartEstampeProps) {
+export default function SmartEstampe({ templates, clients, cases, onSendToAuthorize }: SmartEstampeProps) {
   const [step, setStep] = useState(1);
   const [selectedCase, setSelectedCase] = useState<any>(null);
   const [selectedTemplate, setSelectedTemplate] = useState<any>(null);
@@ -199,7 +195,7 @@ export default function SmartEstampe({ templates, clients, onSendToAuthorize }: 
               </div>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {CASES_FOR_ESTAMPE.map((c) => (
+              {cases.map((c) => (
                 <button 
                   key={c.id}
                   onClick={() => handleSelectCase(c)}

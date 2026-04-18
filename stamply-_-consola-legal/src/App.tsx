@@ -116,6 +116,7 @@ export default function App() {
         return <SmartEstampe
           templates={templates}
           clients={clients}
+          cases={cases}
           onSendToAuthorize={async (newEstampe) => {
             try {
               const saved = await fetch('/api/estampes', {

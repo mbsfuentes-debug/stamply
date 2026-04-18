@@ -34,6 +34,21 @@ export function getDb(): Database.Database {
     if (!existingCols.includes('gender'))          _db.exec(`ALTER TABLE defendants ADD COLUMN gender TEXT NOT NULL DEFAULT ''`);
     if (!existingCols.includes('legal_rep_rut'))   _db.exec(`ALTER TABLE defendants ADD COLUMN legal_rep_rut TEXT NOT NULL DEFAULT ''`);
     if (!existingCols.includes('legal_rep_gender')) _db.exec(`ALTER TABLE defendants ADD COLUMN legal_rep_gender TEXT NOT NULL DEFAULT ''`);
+
+    // Migración: tabla de auditoría IA
+    const auditExists = (_db.prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name='ai_audit_log'`).get() as any);
+    if (!auditExists) {
+      _db.exec(`CREATE TABLE ai_audit_log (
+        id TEXT PRIMARY KEY,
+        timestamp TEXT NOT NULL DEFAULT (datetime('now')),
+        doc_hash TEXT NOT NULL,
+        tokens_sent INTEGER NOT NULL DEFAULT 0,
+        schema_returned TEXT NOT NULL DEFAULT '',
+        ip TEXT NOT NULL DEFAULT '',
+        cached INTEGER NOT NULL DEFAULT 0
+      )`);
+    }
+
     seedDatabase(_db);
   }
   return _db;
@@ -65,6 +80,16 @@ export function dbCreateClient(data: any) {
     data.tariffType || 'Arancel Receptor', data.email || '', data.phone || '',
     data.address || '', data.status || 'Activo', data.casesCount || 0,
     data.closingDay || null, data.paymentTerm || '30_dias', data.isVip ? 1 : 0);
+
+  // Insertar carteras si vienen en el payload
+  if (Array.isArray(data.portfolios)) {
+    data.portfolios.forEach((p: any) => {
+      db.prepare(`INSERT INTO portfolios (id, client_id, name, rut) VALUES (?, ?, ?, ?)`).run(
+        crypto.randomUUID(), id, p.name, p.rut || ''
+      );
+    });
+  }
+
   return dbGetClient(id);
 }
 
@@ -75,6 +100,19 @@ export function dbUpdateClient(id: string, data: any) {
       status=?,closing_day=?,payment_term=?,is_vip=? WHERE id=?
   `).run(data.name, data.rut, data.type, data.tariffType, data.email, data.phone,
     data.address, data.status, data.closingDay || null, data.paymentTerm, data.isVip ? 1 : 0, id);
+
+  // Sincronizar carteras si vienen en el payload
+  if (Array.isArray(data.portfolios)) {
+    // Para simplificar en esta etapa, borramos y reinsertamos carteras
+    // En producción se debería hacer un diff o usar upsert
+    db.prepare('DELETE FROM portfolios WHERE client_id = ?').run(id);
+    data.portfolios.forEach((p: any) => {
+      db.prepare(`INSERT INTO portfolios (id, client_id, name, rut) VALUES (?, ?, ?, ?)`).run(
+        crypto.randomUUID(), id, p.name, p.rut || ''
+      );
+    });
+  }
+
   return dbGetClient(id);
 }
 
@@ -159,6 +197,14 @@ export function dbUpdateCase(id: string, data: any) {
     data.monto || null, data.estadoPago, data.urgente ? 1 : 0, data.observations || '',
     data.numeroInterno || null, data.caratulaConservador || null, id);
   return dbGetCase(id);
+}
+
+export function dbDeleteCase(id: string) {
+  const db = getDb();
+  // Eliminar demandados asociados primero
+  db.prepare('DELETE FROM defendants WHERE case_id = ?').run(id);
+  // Eliminar la causa
+  db.prepare('DELETE FROM cases WHERE id = ?').run(id);
 }
 
 export function dbCheckRolExists(rol: string): any | null {
@@ -279,6 +325,10 @@ export function dbCreateDocument(data: any) {
   return db.prepare('SELECT * FROM documents WHERE id = ?').get(id);
 }
 
+export function dbDeleteDocument(id: string) {
+  getDb().prepare('DELETE FROM documents WHERE id = ?').run(id);
+}
+
 // ─── ESTAMPES ─────────────────────────────────────────────────────────────────
 
 export function dbGetEstampes() {
@@ -326,6 +376,7 @@ export function dbCreateTemplate(data: any) {
 export function dbUpdateTemplate(id: string, data: any) {
   getDb().prepare(`UPDATE templates SET name=?,description=?,content=? WHERE id=?`).run(
     data.name, data.description, data.content, id);
+  return getDb().prepare('SELECT * FROM templates WHERE id = ?').get(id);
 }
 
 export function dbDeleteTemplate(id: string) {

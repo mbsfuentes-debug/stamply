@@ -102,61 +102,80 @@ export default function SmartIntake({ clients = [], setClients, onSuccess, cases
     setStep('upload');
   };
 
-  const handleCreateClient = () => {
+  const handleCreateClient = async () => {
     if (!newClientData.name) {
       alert('Por favor ingrese un nombre.');
       return;
     }
 
-    const newClient: Client = {
-      id: Math.random().toString(36).substr(2, 9),
+    const clientPayload = {
       name: newClientData.name,
       rut: '',
       type: newClientData.type,
       paymentTerm: newClientData.paymentTerm,
       tariffType: 'Arancel Receptor',
       portfolios: [],
-      email: '',
-      phone: '',
-      address: '',
-      status: 'Activo',
-      casesCount: 0
+      status: 'Activo'
     };
 
-    if (setClients) {
-      setClients([...clients, newClient]);
+    try {
+      const res = await fetch('/api/clients', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(clientPayload)
+      });
+      if (!res.ok) throw new Error('Error al crear cliente');
+      const savedClient = await res.json();
+
+      if (setClients) {
+        setClients([...clients, savedClient]);
+      }
+      if (formData) {
+        setFormData({ ...formData, cliente: savedClient.name, cartera: '' });
+      }
+      setShowNewClientModal(false);
+      setNewClientData({ name: '', type: 'Abogado Independiente', paymentTerm: 'inmediato' });
+    } catch (err) {
+      console.error(err);
+      alert('Error al guardar el cliente en el servidor.');
     }
-    if (formData) {
-      setFormData({ ...formData, cliente: newClient.name, cartera: '' });
-    }
-    setShowNewClientModal(false);
-    setNewClientData({ name: '', type: 'Abogado Independiente', paymentTerm: 'inmediato' });
   };
 
-  const handleCreatePortfolio = () => {
+  const handleCreatePortfolio = async () => {
     if (!newPortfolioData.name) {
       alert('Por favor ingrese un nombre para la cartera.');
       return;
     }
 
-    const updatedClients = clients.map(c => {
-      if (c.name === formData?.cliente) {
-        return {
-          ...c,
-          portfolios: [...c.portfolios, { name: newPortfolioData.name, rut: '' }]
-        };
-      }
-      return c;
-    });
+    const client = clients.find(c => c.name === formData?.cliente);
+    if (!client) return;
 
-    if (setClients) {
-      setClients(updatedClients);
+    const updatedClient = {
+      ...client,
+      portfolios: [...client.portfolios, { name: newPortfolioData.name, rut: '' }]
+    };
+
+    try {
+      const res = await fetch(`/api/clients/${client.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updatedClient)
+      });
+      if (!res.ok) throw new Error('Error al actualizar carteras del cliente');
+      const savedClient = await res.json();
+
+      if (setClients) {
+        setClients(clients.map(c => c.id === savedClient.id ? savedClient : c));
+      }
+      if (formData) {
+        setFormData({ ...formData, cartera: newPortfolioData.name });
+      }
+      setShowNewPortfolioModal(false);
+      setNewPortfolioData({ name: '' });
+    } catch (err) {
+      console.error(err);
+      alert('Error al guardar la cartera en el servidor.');
     }
-    if (formData) {
-      setFormData({ ...formData, cartera: newPortfolioData.name });
-    }
-    setShowNewPortfolioModal(false);
-    setNewPortfolioData({ name: '' });
   };
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -207,19 +226,32 @@ export default function SmartIntake({ clients = [], setClients, onSuccess, cases
 
       const data = await response.json();
 
-      setFormData(prev => ({
-        rolNumber: prev?.rolNumber || rolInput.trim(),
-        plaintiffName: data.plaintiffName || '',
-        defendantName: data.defendantName || '',
-        court: data.court || 'Corte de Apelaciones de Santiago',
-        competencia: data.competencia || 'Civil',
-        cliente: prev?.cliente || '',
-        cartera: prev?.cartera || '',
-        numeroInterno: prev?.numeroInterno || '',
+      // Mapear notificados del servidor → estructura Defendant del formulario
+      const mappedDefendants: Defendant[] = (data.notificados && data.notificados.length > 0)
+        ? data.notificados.map((n: any) => ({
+            name:          n.nombre      || '',
+            rut:           n.rut         || '',
+            address:       n.domicilio   || '',
+            city:          n.comuna      || '',
+            gender:        '',
+            legalRep:      n.representanteLegal    || '',
+            legalRepRut:   n.rutRepresentanteLegal || '',
+            legalRepGender: '',
+            hasLegalRep:   !!(n.representanteLegal),
+          }))
+        : [{ name: data.demandado || '', rut: '', address: '', city: '', gender: '', legalRep: '', legalRepRut: '', legalRepGender: '', hasLegalRep: false }];
+
+      setFormData((prev: CaseData | null) => ({
+        rolNumber:           data.rol         || prev?.rolNumber || rolInput.trim(),
+        plaintiffName:       data.demandante  || '',
+        defendantName:       data.demandado   || '',
+        court:               data.tribunal    || 'Corte de Apelaciones de Santiago',
+        competencia:         data.competencia || 'Civil',
+        cliente:             prev?.cliente    || '',
+        cartera:             prev?.cartera    || '',
+        numeroInterno:       prev?.numeroInterno       || '',
         caratulaConservador: prev?.caratulaConservador || '',
-        defendants: data.defendants && data.defendants.length > 0
-          ? data.defendants
-          : [{ name: data.defendantName || '', rut: '', address: '', city: '', gender: '', legalRep: '', legalRepRut: '', legalRepGender: '', hasLegalRep: false }]
+        defendants: mappedDefendants,
       }));
 
       setStep('edit');
@@ -458,9 +490,7 @@ export default function SmartIntake({ clients = [], setClients, onSuccess, cases
               Procesamiento de datos por IA
             </p>
             <p className="text-xs text-amber-700 leading-relaxed">
-              Al subir un PDF, el documento será enviado a <strong>Groq AI (Llama 4)</strong> para
-              extraer automáticamente los datos de la causa (partes, tribunal, domicilios).
-              Los datos se procesan según la política de privacidad de Groq.
+              Al subir un PDF, el servidor extraerá localmente el texto y enviará a <strong>Gemini AI</strong> solo un fragmento anonimizado (sin RUTs, sin datos personales completos) para identificar los roles procesales. Los RUTs se asignan de forma determinística en el servidor, nunca por la IA.
             </p>
             <label className="flex items-start gap-3 cursor-pointer">
               <input
@@ -474,7 +504,7 @@ export default function SmartIntake({ clients = [], setClients, onSuccess, cases
                 }}
               />
               <span className="text-xs text-amber-800 font-medium">
-                Entiendo que el documento será procesado por Groq AI para extraer datos.
+                Entiendo que se enviará un fragmento anonimizado del documento a Gemini AI para identificar las partes del proceso.
               </span>
             </label>
           </div>
